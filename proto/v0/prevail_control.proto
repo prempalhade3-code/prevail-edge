@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package prevail.v0;
+
+option java_package = "dev.prevail.v0";
+option java_outer_classname = "PrevailControlProto";
+
+// Control-plane messages between edge runtimes (QUIC + Protobuf).
+
+message TrajectorySample {
+  string session_id = 1;
+  int64 timestamp_ms = 2;
+  double latitude = 3;
+  double longitude = 4;
+  double speed_mps = 5;
+  string edge_id = 6;
+  optional double heading_deg = 7;
+}
+
+message PredictionResult {
+  string session_id = 1;
+  string model_version = 2;
+  map<string, double> probabilities = 3;
+  optional double eta_sec = 4;
+  int64 computed_at_ms = 5;
+}
+
+message SpeculationDecision {
+  string session_id = 1;
+  bool should_speculate = 2;
+  repeated string target_edge_ids = 3;
+  string reason = 4;
+}
+
+message ShadowCreate {
+  string session_id = 1;
+  string source_edge_id = 2;
+  string target_edge_id = 3;
+  int64 requested_at_ms = 4;
+}
+
+message ShadowRelease {
+  string session_id = 1;
+  string target_edge_id = 2;
+  string reason = 3;
+}
+
+message ShadowSyncStatus {
+  string session_id = 1;
+  string shadow_edge_id = 2;
+  double sync_ratio = 3;
+  int64 lag_records = 4;
+  int64 reported_at_ms = 5;
+}
+
+message PromotionRequest {
+  string session_id = 1;
+  string from_edge_id = 2;
+  string to_edge_id = 3;
+  uint64 expected_epoch = 4;
+}
+
+message PromotionAck {
+  string session_id = 1;
+  bool accepted = 2;
+  uint64 new_epoch = 3;
+  string message = 4;
+}
+
+message AuthorityToken {
+  string session_id = 1;
+  uint64 epoch = 2;
+  string holder_edge_id = 3;
+  string signature = 4;
+}
+
+message AuthorityTransfer {
+  AuthorityToken token = 1;
+  string previous_holder_edge_id = 2;
+}
+
+message DemotionNotice {
+  string session_id = 1;
+  string edge_id = 2;
+  uint64 epoch = 3;
+}
+
+message EdgeCapabilityAdvertisement {
+  string edge_id = 1;
+  bool supports_stream = 2;
+  bool supports_image = 3;
+  bool supports_gpu = 4;
+  double cpu_available_ratio = 5;
+  double memory_available_ratio = 6;
+}
+
+message MigrationFallbackStart {
+  string session_id = 1;
+  string from_edge_id = 2;
+  string to_edge_id = 3;
+  string reason = 4;
+}
+
+message MigrationFallbackComplete {
+  string session_id = 1;
+  string to_edge_id = 2;
+  int64 latency_ms = 3;
+}
+
+message TimelineEvent {
+  string run_id = 1;
+  int64 timestamp_ms = 2;
+  string event_type = 3;
+  optional string edge_id = 4;
+  string message = 5;
+  map<string, string> payload = 6;
+}
+
+message PeerPing {
+  string edge_id = 1;
+  int64 sent_at_ms = 2;
+}
+
+message PeerPong {
+  string edge_id = 1;
+  int64 received_at_ms = 2;
+}

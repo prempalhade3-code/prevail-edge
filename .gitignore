@@ -22,10 +22,12 @@ build/
 
 # Rust
 /target/
+rust/**/target/
 **/*.rs.bk
 
 # Node
 node_modules/
+frontend/dist/
 npm-debug.log*
 .pnpm-store/
 

@@ -1,0 +1,30 @@
+[package]
+name = "prevail-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "PREVAIL edge runtime: authority, speculation, warm shadows"
+license = "MIT"
+
+[[bin]]
+name = "prevail-runtime"
+path = "src/main.rs"
+
+[lib]
+name = "prevail_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+
+[dev-dependencies]
+tokio-test = "0.4"

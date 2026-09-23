@@ -6,8 +6,23 @@ PREVAIL predicts where a mobile device will move next, proactively maintains **w
 
 ## Status
 
-- **Phase:** Repository & team setup (no application code yet)
+- **Phase:** Prem core + dashboard v0.1 (Rust runtime, FastAPI, React UI)
 - **Plan:** See [docs/PREVAIL-Master-Engineering-Plan.md](docs/PREVAIL-Master-Engineering-Plan.md) (authoritative v2.0 roadmap)
+
+### Run locally (Prem stack)
+
+```bash
+# Terminal 1 — core runtime :8090
+cd rust/prevail-runtime && CARGO_TARGET_DIR=./target cargo run --release
+
+# Terminal 2 — observability API :8000
+cd backend && pip install -r requirements.txt && PREVAIL_RUNTIME_URL=http://127.0.0.1:8090 python -m prevail_backend.main
+
+# Terminal 3 — dashboard :5173
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:5173 — use **Advance demo step** to walk predict → shadow → promote.
 
 ## Team workflow
 

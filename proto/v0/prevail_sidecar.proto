@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package prevail.v0;
+
+option java_package = "dev.prevail.v0";
+option java_outer_classname = "PrevailSidecarProto";
+
+// Flink ProcessFunction ↔ Rust runtime (local gRPC, ADR-04).
+
+service PrevailSidecar {
+  rpc ReportLocation(TrajectorySample) returns (LocationAck);
+  rpc GetAuthority(AuthorityQuery) returns (AuthorityState);
+  rpc OnPromotion(PromotionNotice) returns (PromotionSidecarAck);
+}
+
+message LocationAck {
+  bool accepted = 1;
+  string current_authoritative_edge = 2;
+}
+
+message AuthorityQuery {
+  string session_id = 1;
+}
+
+message AuthorityState {
+  string session_id = 1;
+  bool is_authoritative = 2;
+  string holder_edge_id = 3;
+  uint64 epoch = 4;
+  bool output_enabled = 5;
+}
+
+message PromotionNotice {
+  string session_id = 1;
+  string new_holder_edge_id = 2;
+  uint64 epoch = 3;
+}
+
+message PromotionSidecarAck {
+  bool output_gate_updated = 1;
+}
