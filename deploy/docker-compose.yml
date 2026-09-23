@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  edge-a:
+    image: python:3.11-slim
+    container_name: edge-a
+    hostname: edge-a
+    command: python -c "import http.server, socketserver; handler = http.server.SimpleHTTPRequestHandler; httpd = socketserver.TCPServer(('', 8080), handler); print('edge-a listening on 8080'); httpd.serve_forever()"
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/\")' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+  edge-b:
+    image: python:3.11-slim
+    container_name: edge-b
+    hostname: edge-b
+    command: python -c "import http.server, socketserver; handler = http.server.SimpleHTTPRequestHandler; httpd = socketserver.TCPServer(('', 8080), handler); print('edge-b listening on 8080'); httpd.serve_forever()"
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/\")' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+  edge-c:
+    image: python:3.11-slim
+    container_name: edge-c
+    hostname: edge-c
+    command: python -c "import http.server, socketserver; handler = http.server.SimpleHTTPRequestHandler; httpd = socketserver.TCPServer(('', 8080), handler); print('edge-c listening on 8080'); httpd.serve_forever()"
+    ports:
+      - "8083:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/\")' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+  edge-d:
+    image: python:3.11-slim
+    container_name: edge-d
+    hostname: edge-d
+    command: python -c "import http.server, socketserver; handler = http.server.SimpleHTTPRequestHandler; httpd = socketserver.TCPServer(('', 8080), handler); print('edge-d listening on 8080'); httpd.serve_forever()"
+    ports:
+      - "8084:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/\")' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+  vehicle-sim:
+    build:
+      context: ..
+      dockerfile: sim/vehicle/Dockerfile
+    container_name: vehicle-sim
+    hostname: vehicle-sim
+    depends_on:
+      edge-a:
+        condition: service_healthy
+      edge-b:
+        condition: service_healthy
+      edge-c:
+        condition: service_healthy
+      edge-d:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: prevail-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_DB: prevail
+      POSTGRES_USER: prevail
+      POSTGRES_PASSWORD: prevail_password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prevail -d prevail"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - prevail-net
+
+networks:
+  prevail-net:
+    driver: bridge

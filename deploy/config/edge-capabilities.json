@@ -1,0 +1,36 @@
+{
+  "capabilities": {
+    "edge-a": {
+      "edge_id": "edge-a",
+      "supports_stream": true,
+      "supports_image": true,
+      "supports_gpu": false,
+      "cpu_available_ratio": 0.7,
+      "memory_available_ratio": 0.65
+    },
+    "edge-b": {
+      "edge_id": "edge-b",
+      "supports_stream": true,
+      "supports_image": true,
+      "supports_gpu": true,
+      "cpu_available_ratio": 0.8,
+      "memory_available_ratio": 0.75
+    },
+    "edge-c": {
+      "edge_id": "edge-c",
+      "supports_stream": true,
+      "supports_image": true,
+      "supports_gpu": false,
+      "cpu_available_ratio": 0.6,
+      "memory_available_ratio": 0.6
+    },
+    "edge-d": {
+      "edge_id": "edge-d",
+      "supports_stream": true,
+      "supports_image": false,
+      "supports_gpu": false,
+      "cpu_available_ratio": 0.5,
+      "memory_available_ratio": 0.5
+    }
+  }
+}
