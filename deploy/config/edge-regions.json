@@ -1,0 +1,32 @@
+{
+  "regions": [
+    {
+      "edge_id": "edge-a",
+      "name": "Central Edge Node A",
+      "latitude": 12.9716,
+      "longitude": 77.5946,
+      "coverage_radius_m": 500.0
+    },
+    {
+      "edge_id": "edge-b",
+      "name": "East Edge Node B",
+      "latitude": 12.9750,
+      "longitude": 77.6050,
+      "coverage_radius_m": 500.0
+    },
+    {
+      "edge_id": "edge-c",
+      "name": "South-East Edge Node C",
+      "latitude": 12.9650,
+      "longitude": 77.6100,
+      "coverage_radius_m": 500.0
+    },
+    {
+      "edge_id": "edge-d",
+      "name": "North-West Edge Node D",
+      "latitude": 12.9800,
+      "longitude": 77.5850,
+      "coverage_radius_m": 500.0
+    }
+  ]
+}
