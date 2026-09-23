@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PredictionResult",
+  "description": "Next-edge probability distribution. Owner: Atharva. Consumer: Prem speculation manager.",
+  "type": "object",
+  "required": ["session_id", "probabilities", "model_version"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "model_version": { "type": "string" },
+    "probabilities": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "eta_sec": { "type": "number", "minimum": 0 },
+    "computed_at_ms": { "type": "integer" }
+  }
+}

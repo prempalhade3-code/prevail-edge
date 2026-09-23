@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PREVAIL Master Engineering Plan v2.0</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.45;
+    color: #1a1a1a;
+    max-width: 100%;
+  }
+  h1 { font-size: 22pt; color: #0d47a1; border-bottom: 2px solid #0d47a1; padding-bottom: 8px; margin-top: 0; page-break-after: avoid; }
+  h2 { font-size: 14pt; color: #1565c0; margin-top: 22px; page-break-after: avoid; }
+  h3 { font-size: 11pt; color: #1976d2; margin-top: 16px; page-break-after: avoid; }
+  p { margin: 6px 0; text-align: justify; }
+  ul { margin: 8px 0 8px 20px; }
+  li { margin: 3px 0; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 16px 0; }
+  code { font-family: Menlo, Monaco, monospace; font-size: 9pt; background: #f5f5f5; padding: 1px 4px; border-radius: 3px; }
+  pre.code-block {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 8pt;
+    line-height: 1.35;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    page-break-inside: avoid;
+  }
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px;
+    font-size: 9pt;
+    page-break-inside: avoid;
+  }
+  table.data-table th, table.data-table td {
+    border: 1px solid #bdbdbd;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.data-table th { background: #e3f2fd; font-weight: 600; }
+  table.data-table tr:nth-child(even) td { background: #fafafa; }
+  strong { color: #111; }
+  .cover-meta { font-size: 11pt; color: #555; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<h1>PREVAIL — Master Engineering Plan (Definitive)</h1>
+
+<p><strong>Version:</strong> 2.0 (post-discussion source of truth)  </p>
+<p><strong>Date:</strong> 23 September 2026  </p>
+<p><strong>Status:</strong> Authoritative implementation roadmap — no code in this document  </p>
+<p><strong>Audience:</strong> Implementation engineers, research reviewers, demo stakeholders</p>
+
+<hr/>
+
+<h2>Document control</h2>
+
+<p>This plan supersedes the initial engineering plan (v1.0). It incorporates:</p>
+
+<ul><li>Original PREVAIL research architecture (predict → pre-position → warm shadow → promote).</li>
+<li>Prototype stack: Rust runtime, Apache Flink workload, Python/PyTorch GRU, Docker Compose edge emulation, QUIC/Protobuf control plane, FastAPI/React/PostgreSQL observability.</li>
+<li>**Mobility:** SUMO as primary trajectory/road-network generator; T-Drive/GeoLife for ML training; optional CARLA for presentation-only 3D clips (not on critical path).</li>
+<li>**Capability-aware speculation:** Edge nodes declare workload capabilities (e.g. image/GPU); speculation manager filters predicted edges before shadow creation.</li>
+<li>**Distance and ETA:** Haversine or road-network distance for region mapping and lead-time gating (`ETA ≥ sync_time + margin`).</li>
+<li>**Destination matrix:** Simple Markov baseline optional; GRU probability distribution is primary predictor output.</li>
+<li>**Dask:** Optional parallel Python data prep for training pipelines only — does not replace Flink or Rust.</li>
+<li>**Dashboard:** Leaflet/Mapbox 2D map; event timeline; shadow/sync/authority panels.</li>
+</ul>
+<hr/>
+
+<h2>1. System objective</h2>
+
+<h3>1.1 Problem statement</h3>
+
+<p>Mobile devices running stream-processing workloads at edge nodes incur <strong>reactive migration latency</strong> when they move: the new edge waits for state transfer and restoration after arrival, causing service gap, dropped continuity, and measurable handoff delay.</p>
+
+<h3>1.2 PREVAIL solution</h3>
+
+<p>PREVAIL converts edge handoff from <strong>reactive</strong> to <strong>predictive</strong>:</p>
+
+<p>1. <strong>Predict</strong> likely next edge(s) and arrival timing from mobility history.</p>
+<p>2. <strong>Pre-position</strong> application state at candidate future nodes as <strong>warm shadows</strong> (processing, synchronized, output suppressed).</p>
+<p>3. <strong>Promote</strong> the correct shadow to <strong>authoritative</strong> when movement occurs, via chain-of-custody token transfer.</p>
+<p>4. <strong>Discard</strong> incorrect shadows or <strong>fallback</strong> to reactive migration when prediction or capability constraints fail.</p>
+
+<h3>1.3 Research hypothesis</h3>
+
+<p>&gt; If mobile edge destinations can be predicted with sufficient confidence and lead time, proactively maintaining warm state replicas at resource-feasible future edges reduces handoff latency versus reactive migration, while resource-bounded speculation limits overhead from wrong predictions.</p>
+
+<h3>1.4 Measurable success</h3>
+
+<table class="data-table"><tr><th>Category</th><th>Success criteria</th></tr><tr><td>Correctness</td><td>Exactly one authoritative publisher per session; no unsuppressed shadow output on official path</td></tr><tr><td>Performance</td><td>Lower p50/p95 transition latency vs baseline on correct-prediction scenarios</td></tr><tr><td>Research</td><td>Break-even prediction accuracy curve; overhead vs benefit under varying speculation budgets</td></tr><tr><td>Demo</td><td>Live dashboard shows predict → shadow → sync → promote → demote timeline</td></tr></table>
+
+<h3>1.5 Explicit non-goals (v1 prototype)</h3>
+
+<ul><li>Physical MEC hardware deployment  </li>
+<li>Multi-tenant production SaaS  </li>
+<li>Byzantine consensus beyond epoch-based authority token  </li>
+<li>CARLA/SUMO as runtime dependency for handoff correctness (SUMO feeds trajectories; handoff logic is independent)  </li>
+<li>Dask as stream-processing engine  </li>
+</ul>
+<hr/>
+
+<h2>2. Finalized architecture</h2>
+
+<h3>2.1 Logical architecture</h3>
+
+<pre class="code-block"><code>┌─────────────────────────────────────┐
+<p>                    │     MOBILITY SOURCES (offline/online)│</p>
+<p>                    │  SUMO │ T-Drive/GeoLife │ Vehicle  │</p>
+<p>                    │       │ (ML training)    │   Sim    │</p>
+<p>                    └──────────────┬──────────────────────┘</p>
+<p>                                   │ GPS + stream events</p>
+<p>                                   ▼</p>
+<p>┌──────────────────────────────────────────────────────────────────┐</p>
+<p>│ EDGE N (container) — role: AUTHORITATIVE or WARM_SHADOW or IDLE  │</p>
+<p>│  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │</p>
+<p>│  │ Flink workload  │  │ PREVAIL Runtime  │  │ Edge registry   │ │</p>
+<p>│  │ (stream + state)│◄─┤ Rust: speculation│  │ capabilities    │ │</p>
+<p>│  └────────┬────────┘  │ authority, QUIC  │  └─────────────────┘ │</p>
+<p>│           │           └────────┬─────────┘                        │</p>
+<p>└───────────┼────────────────────┼─────────────────────────────────┘</p>
+<p>            │                    │ QUIC + Protobuf (control)</p>
+<p>            │ stream tee/fan-out ├──────────► peer edge shadows</p>
+<p>            ▼                    ▼</p>
+<p>     Official sink          Predictor (Python/GRU) — probabilities + ETA inputs</p>
+
+<p>┌──────────────────────────────────────────────────────────────────┐</p>
+<p>│ OBSERVABILITY (non-authoritative)                                 │</p>
+<p>│  Runtime events ──► PostgreSQL ◄── FastAPI ──► React (Leaflet)   │</p>
+<p>└──────────────────────────────────────────────────────────────────┘</code></pre></p>
+
+<h3>2.2 Three planes</h3>
+
+<table class="data-table"><tr><th>Plane</th><th>Responsibility</th><th>Technologies</th></tr><tr><td>**Data**</td><td>High-volume stream, state replication to shadows</td><td>Flink, app-level fan-out (multicast UDP where viable)</td></tr><tr><td>**Control**</td><td>Shadow lifecycle, promotion, authority, capability checks</td><td>Rust, QUIC, Protobuf</td></tr><tr><td>**Observability**</td><td>Metrics, timeline, topology visualization</td><td>FastAPI, WebSocket, PostgreSQL, React</td></tr></table>
+
+<p><strong>Invariant:</strong> Handoff correctness never depends on PostgreSQL or the dashboard backend.</p>
+
+<h3>2.3 Five core subsystems (trace all work here)</h3>
+
+<p>1. <strong>Trajectory Predictor</strong> — P(next edge | history); optional Markov destination-matrix baseline.  </p>
+<p>2. <strong>Speculation Manager</strong> — confidence + ETA + capability + resource budget → create/skip shadows.  </p>
+<p>3. <strong>Warm Shadow Manager</strong> — create, sync, suppress output, discard shadows.  </p>
+<p>4. <strong>Chain-of-Custody / Authority</strong> — single authoritative node; epoch token; promotion/demotion.  </p>
+<p>5. <strong>Stream Processing Layer</strong> — Flink application state and continuous processing.</p>
+
+<h3>2.4 Emulated hardware model</h3>
+
+<p>Each Docker container = <strong>one logical edge compute node</strong> with configured:</p>
+
+<ul><li>`edge_id`, geographic region polygon(s)  </li>
+<li>`capabilities`: `{ stream, image, gpu, ... }`  </li>
+<li>Resource limits (CPU/RAM) for resource-aware speculation demos  </li>
+</ul>
+<p><strong>Not</strong> physical edge hardware — thesis language: *containerized distributed edge emulation*.</p>
+
+<hr/>
+
+<h2>3. Component responsibilities</h2>
+
+<h3>3.1 SUMO mobility generator</h3>
+
+<ul><li>Builds or imports road network; simulates vehicle route.  </li>
+<li>Exports time-stamped GPS (and optional speed) → **Vehicle Sim adapter** or direct injection.  </li>
+<li>**Does not** run PREVAIL logic; supplies realistic mobility input for experiments and demos.</li>
+</ul>
+<h3>3.2 Vehicle simulator</h3>
+
+<ul><li>Replays SUMO-exported or file-based trajectories (`A→A→B→C`).  </li>
+<li>Emits GPS/region events + application stream (GPS aggregates, sensor tuples, **image event metadata** if capability demo enabled).  </li>
+<li>Deterministic scenario IDs for reproducible experiments.</li>
+</ul>
+<h3>3.3 Edge region map + distance service</h3>
+
+<ul><li>Static graph: edges as regions (polygons or cells), adjacency optional.  </li>
+<li>GPS → `edge_id`; distance to region boundary/centroid; **ETA** = distance / speed (with minimum floor).  </li>
+<li>Shared by SUMO export alignment, predictor labels, speculation lead-time gate, dashboard map.</li>
+</ul>
+<h3>3.4 Trajectory predictor (Python, PyTorch, GRU)</h3>
+
+<ul><li>**Input:** Recent edge-id sequence, speed, direction features.  </li>
+<li>**Output:** Probability distribution over next `edge_id` (not a single hard label).  </li>
+<li>**Training data:** T-Drive, GeoLife mapped to same region graph; optional **Dask** for parallel preprocessing only.  </li>
+<li>**Export:** TorchScript/ONNX (&amp;lt;1 MB target); versioned artifact.  </li>
+<li>**Optional baseline:** Destination transition matrix for comparison experiments.</li>
+</ul>
+<h3>3.5 Speculation manager (Rust)</h3>
+
+<ul><li>Consumes `PredictionResult`, `ETA`, local and peer resource snapshots, `SpeculationConfig`.  </li>
+<li>**Capability filter:** Remove candidates where required workload caps absent (e.g. `needs_image` → edge must have `supports_image`).  </li>
+<li>**Lead-time gate:** No shadow if `ETA &lt; estimated_sync_time + promotion_margin`.  </li>
+<li>**Budget:** `max_shadows`, `min_confidence`, cumulative cost caps.  </li>
+<li>Emits `ShadowCreate` / `ShadowRelease` to Warm Shadow Manager.</li>
+</ul>
+<h3>3.6 Warm shadow manager (Rust + Flink coordination)</h3>
+
+<ul><li>Instantiates shadow Flink subtask/job on target edge container.  </li>
+<li>Configures **output suppression** on shadow sinks.  </li>
+<li>Drives state/stream sync per locked semantics (Phase 0 ADR).  </li>
+<li>Reports `ShadowSyncStatus` (lag records or time-behind authoritative).  </li>
+<li>On wrong prediction or promotion to elsewhere: **discard** shadow resources.</li>
+</ul>
+<h3>3.7 Chain-of-custody / authority (Rust)</h3>
+
+<ul><li>**AuthorityToken:** `{ session_id, epoch, holder_edge_id, signature }`.  </li>
+<li>Monotonic epoch on promotion; old holder demoted after `PromotionAck`.  </li>
+<li>Crash semantics: shadow promotion only if token rules + sync threshold + authoritative timeout (documented).  </li>
+<li>Prevents split-brain on official output path.</li>
+</ul>
+<h3>3.8 Flink stream processing layer</h3>
+
+<ul><li>Representative mobile workload: keyed state by `vehicle_id` / session.  </li>
+<li>Runs on **authoritative** edge; shadow instances mirror processing.  </li>
+<li>Checkpointing enabled for **reactive migration baseline** and optional sync aid.  </li>
+<li>Integration with Rust via **sidecar** (gRPC/Unix socket): location reports, authority queries, promotion callbacks.</li>
+</ul>
+<h3>3.9 Reactive migration baseline (comparison mode)</h3>
+
+<ul><li>No shadows: on handoff, checkpoint export → transfer → restore → resume.  </li>
+<li>Same workload and topology; used for all PREVAIL vs traditional metrics.</li>
+</ul>
+<h3>3.10 Control transport</h3>
+
+<ul><li>**QUIC** + **Protobuf** between edge runtimes: prediction relay (if needed), shadow control, promotion, token transfer, heartbeats.  </li>
+<li>Lab prototype: TLS optional; document threat model.</li>
+</ul>
+<h3>3.11 Stream distribution</h3>
+
+<ul><li>**Primary v1:** Application-level **fan-out** from authoritative edge to shadow QUIC/stream endpoints.  </li>
+<li>**Optimization:** Multicast UDP where Docker network supports it; not required for correctness.</li>
+</ul>
+<h3>3.12 Observability stack</h3>
+
+<ul><li>**FastAPI:** REST read APIs + optional demo controls (scenario start — not authority).  </li>
+<li>**WebSocket:** Live timeline, sync %, authority holder.  </li>
+<li>**PostgreSQL:** Append-only experiment log, metrics samples, run metadata.  </li>
+<li>**React + Leaflet/Mapbox:** Map, prediction panel, shadow panel, event timeline, comparison charts (Recharts).</li>
+</ul>
+<h3>3.13 Optional: CARLA (presentation)</h3>
+
+<ul><li>Pre-recorded or scripted 3D clip for stakeholder demos.  </li>
+<li>**Not** on critical path for metrics or handoff correctness.</li>
+</ul>
+<hr/>
+
+<h2>4. End-to-end execution flow</h2>
+
+<h3>4.1 Session start</h3>
+
+<p>1. Vehicle sim starts scenario; session bound to <code>vehicle_id</code>.  </p>
+<p>2. GPS maps to Edge A; Edge A runtime becomes <strong>AUTHORITATIVE</strong>; authority token issued <code>epoch=0</code>.  </p>
+<p>3. Flink job active on A; stream ingress from sim.  </p>
+<p>4. Observability records <code>VehicleConnected</code>, <code>AuthorityGranted</code>.</p>
+
+<h3>4.2 Steady state on authoritative edge</h3>
+
+<p>1. Flink processes stream; keyed state accumulates.  </p>
+<p>2. Runtime samples trajectory; every K ticks calls predictor → <code>PredictionResult</code>.  </p>
+<p>3. Speculation manager evaluates candidates (capability, confidence, ETA, resources).  </p>
+<p>4. If approved: Warm Shadow Manager on peer Edge B creates shadow; stream tee + state sync begin.  </p>
+<p>5. Shadow reports sync progress; dashboard updates; <strong>shadow output suppressed</strong>.</p>
+
+<h3>4.3 Correct prediction handoff</h3>
+
+<p>1. Sim/GPS detects region change A → B.  </p>
+<p>2. Runtime validates B has shadow and sync ≥ threshold (or policy-defined promotion rules).  </p>
+<p>3. <strong>Promotion:</strong> token epoch++, holder=B; A demoted; B authoritative.  </p>
+<p>4. Flink official sink on B; A shadow torn down or idle.  </p>
+<p>5. Metrics: <code>transition_latency_promotion</code> vs baseline for same trace.</p>
+
+<h3>4.4 Wrong prediction</h3>
+
+<p>1. Predicted B; vehicle enters C.  </p>
+<p>2. Discard shadow on B.  </p>
+<p>3. <strong>Reactive migration</strong> A→C (or C cold start if A unreachable): checkpoint path.  </p>
+<p>4. Metrics: <code>failed_speculation</code>, fallback latency, wasted shadow cost.</p>
+
+<h3>4.5 Capability mismatch</h3>
+
+<p>1. Workload requires <code>image</code>; predicted edge B lacks <code>supports_image</code>.  </p>
+<p>2. Speculation manager <strong>never creates</strong> shadow on B; may select capable peer or wait.  </p>
+<p>3. Fallback reactive migration to nearest capable edge in region graph.</p>
+
+<h3>4.6 Continuous loop</h3>
+
+<p>After promotion to B, predictor runs on B's trajectory context; speculation targets next edges (e.g. C); cycle repeats.</p>
+
+<h3>4.7 Closed-loop diagram</h3>
+
+<pre class="code-block"><code>Observe → Predict → Filter(capability) → Speculate? → Create shadow → Sync
+<p>    → Move → [Correct: Promote | Wrong: Discard + Migrate] → Observe → ...</code></pre></p>
+
+<hr/>
+
+<h2>5. Hardware architecture (emulated)</h2>
+
+<table class="data-table"><tr><th>Logical component</th><th>Emulation</th><th>Responsibility</th></tr><tr><td>Edge node A–D</td><td>Docker container</td><td>Compute, Rust runtime, Flink task slot, local volumes for checkpoints</td></tr><tr><td>Network</td><td>Compose custom bridge</td><td>QUIC between containers; optional partition via tc/iptables in tests</td></tr><tr><td>Vehicle</td><td>Sim container or host process</td><td>Event generation only</td></tr><tr><td>Flink JobManager</td><td>Container</td><td>Job coordination (central JM + edge-labeled TMs — default ADR)</td></tr><tr><td>Predictor</td><td>Container or embedded lib</td><td>Inference CPU; GPU optional for training only</td></tr><tr><td>Observability DB</td><td>PostgreSQL container</td><td>Experiment persistence</td></tr><tr><td>Workstation host</td><td>Developer machine</td><td>Orchestrates Compose; not authoritative</td></tr></table>
+
+<hr/>
+
+<h2>6. Software architecture</h2>
+
+<h3>6.1 Repository layout (target monorepo)</h3>
+
+<pre class="code-block"><code>prevail/
+<p>├── proto/                    # Protobuf schemas</p>
+<p>├── rust/prevail-runtime/     # Edge agent</p>
+<p>├── python/predictor/         # Train + inference</p>
+<p>├── python/mobility/          # SUMO export adapters, region map</p>
+<p>├── flink/                    # Job + ProcessFunction hooks</p>
+<p>├── sim/vehicle/                # Scenario replay</p>
+<p>├── deploy/                   # docker-compose, configs</p>
+<p>├── backend/                  # FastAPI</p>
+<p>├── frontend/                 # React dashboard</p>
+<p>├── experiments/              # Scenario YAML, runners</p>
+<p>└── docs/                     # ADRs, this plan</code></pre></p>
+
+<h3>6.2 Technology stack (final)</h3>
+
+<table class="data-table"><tr><th>Layer</th><th>Choice</th><th>Role</th></tr><tr><td>Stream processing</td><td>Apache Flink</td><td>Application workload + state</td></tr><tr><td>Edge runtime</td><td>Rust</td><td>Speculation, shadows, authority, QUIC</td></tr><tr><td>ML</td><td>Python, PyTorch, GRU</td><td>Next-edge distribution</td></tr><tr><td>ML data prep (optional)</td><td>Dask</td><td>Parallel dataset preprocessing</td></tr><tr><td>Mobility</td><td>SUMO + T-Drive/GeoLife</td><td>Trajectories + training</td></tr><tr><td>Control</td><td>QUIC, Protobuf</td><td>Inter-edge messages</td></tr><tr><td>Stream fan-out</td><td>App tee (+ multicast optional)</td><td>Shadow input</td></tr><tr><td>Emulation</td><td>Docker Compose</td><td>Edge nodes</td></tr><tr><td>API/UI</td><td>FastAPI, React, TypeScript, Tailwind</td><td>Dashboard</td></tr><tr><td>Map</td><td>Leaflet or Mapbox</td><td>2D topology</td></tr><tr><td>Metrics store</td><td>PostgreSQL</td><td>Experiment log</td></tr><tr><td>3D demo (optional)</td><td>CARLA</td><td>Presentation only</td></tr></table>
+
+<hr/>
+
+<h2>7. Hardware–software interaction</h2>
+
+<p>1. <strong>Host</strong> runs <code>docker compose up</code>; assigns each edge container CPU/RAM limits.  </p>
+<p>2. <strong>Vehicle sim</strong> sends UDP/TCP to <strong>current authoritative</strong> edge ingress port (routing policy in runtime).  </p>
+<p>3. <strong>Edge Rust runtime</strong> reads cgroup stats (or simulated load) for resource-aware speculation.  </p>
+<p>4. <strong>Flink</strong> uses container-local disk for checkpoints; baseline migration copies checkpoint blob edge-to-edge via control/data channel.  </p>
+<p>5. <strong>SUMO</strong> runs offline or in CI; produces trajectory files consumed by sim — no runtime coupling to Rust.  </p>
+<p>6. <strong>Predictor</strong> invoked over localhost HTTP or Unix socket from authoritative edge container only (decentralized inference per edge).</p>
+
+<hr/>
+
+<h2>8. Communication and data flow</h2>
+
+<h3>8.1 Protobuf message catalog (control plane)</h3>
+
+<table class="data-table"><tr><th>Message</th><th>Direction</th><th>Purpose</th></tr><tr><td>`TrajectorySample`</td><td>Sim → Edge</td><td>GPS, speed, timestamp</td></tr><tr><td>`PredictionResult`</td><td>Predictor → Runtime</td><td>edge_id → probability</td></tr><tr><td>`SpeculationDecision`</td><td>Internal</td><td>Audit trail</td></tr><tr><td>`ShadowCreate` / `ShadowRelease`</td><td>A → B</td><td>Shadow lifecycle</td></tr><tr><td>`ShadowSyncStatus`</td><td>B → A</td><td>Lag/sync metric</td></tr><tr><td>`PromotionRequest` / `PromotionAck`</td><td>A ↔ B</td><td>Handoff</td></tr><tr><td>`AuthorityToken` / `AuthorityTransfer`</td><td>A → B</td><td>Custody</td></tr><tr><td>`DemotionNotice`</td><td>A → peers</td><td>Post-promotion cleanup</td></tr><tr><td>`MigrationFallbackStart/Complete`</td><td>Runtime</td><td>Wrong prediction path</td></tr><tr><td>`TimelineEvent`</td><td>Runtime → PG</td><td>Dashboard</td></tr><tr><td>`EdgeCapabilityAdvertisement`</td><td>Edge → peers</td><td>Capability-aware filtering</td></tr></table>
+
+<h3>8.2 Data plane paths</h3>
+
+<pre class="code-block"><code>Sim ──stream──► Authoritative Flink ingress
+<p>Authoritative ──tee──► Shadow Flink ingress(es)</p>
+<p>Authoritative Flink ──► Official sink (metrics/file/Kafka lab sink)</p>
+<p>Shadow Flink ──X──► (sinks blocked)</code></pre></p>
+
+<h3>8.3 Observability path</h3>
+
+<pre class="code-block"><code>Runtime ──async──► PostgreSQL
+<p>FastAPI ◄──query── PostgreSQL</p>
+<p>FastAPI ──WebSocket──► React</code></pre></p>
+
+<hr/>
+
+<h2>9. Security and trust model</h2>
+
+<h3>9.1 Trust boundaries</h3>
+
+<table class="data-table"><tr><th>Boundary</th><th>Trust assumption</th></tr><tr><td>Edge runtime ↔ edge runtime</td><td>Same lab trust domain; protobuf schema validation</td></tr><tr><td>Runtime ↔ Flink sidecar</td><td>Same container; local socket</td></tr><tr><td>Runtime ↔ Predictor</td><td>Localhost; no external trust</td></tr><tr><td>Dashboard ↔ FastAPI</td><td>Read-mostly; demo controls cannot forge authority token</td></tr><tr><td>PostgreSQL</td><td>Untrusted for correctness; append-only audit</td></tr></table>
+
+<h3>9.2 Security properties (prototype)</h3>
+
+<ul><li>**Authority integrity:** Only token holder may enable official sink.  </li>
+<li>**No shadow leakage:** Suppression enforced in Flink + runtime double-check.  </li>
+<li>**Versioned proto:** Reject unknown promotion messages on critical paths.  </li>
+</ul>
+<h3>9.3 Known weaknesses (accepted for v1)</h3>
+
+<ul><li>No mutual TLS on QUIC  </li>
+<li>No multi-tenant isolation  </li>
+<li>Simulated vehicle, not attested mobile device  </li>
+</ul>
+<p>Document for thesis; harden in future work section.</p>
+
+<hr/>
+
+<h2>10. State management</h2>
+
+<table class="data-table"><tr><th>State type</th><th>Owner</th><th>Replication</th></tr><tr><td>Flink keyed operator state</td><td>Authoritative Flink</td><td>Incremental sync to shadows per ADR</td></tr><tr><td>Authority token</td><td>Rust runtime</td><td>Transferred on promotion; not in DB</td></tr><tr><td>Prediction cache</td><td>Ephemeral per edge</td><td>Recomputed on trajectory</td></tr><tr><td>Experiment log</td><td>PostgreSQL</td><td>Durable, non-authoritative</td></tr><tr><td>Checkpoints</td><td>Local/MinIO (if ADR)</td><td>Baseline migration + optional shadow aid</td></tr></table>
+
+<p><strong>Sync definition (must lock in Phase 0):</strong> e.g. shadow lag ≤ N records OR ≤ T ms behind authoritative keyed state.</p>
+
+<hr/>
+
+<h2>11. Failure handling</h2>
+
+<table class="data-table"><tr><th>Failure</th><th>Behavior</th></tr><tr><td>Wrong prediction</td><td>Discard shadow; reactive migrate to actual edge</td></tr><tr><td>Capability mismatch</td><td>Skip shadow; migrate to capable edge</td></tr><tr><td>Shadow sync incomplete at arrival</td><td>Policy: delay promotion vs promote with catch-up vs fallback migrate — **Phase 0 ADR**</td></tr><tr><td>Authoritative crash, warm shadow exists</td><td>Promote shadow if token + sync rules satisfied</td></tr><tr><td>Authoritative crash, no shadow</td><td>Session stall or recovery from checkpoint — document</td></tr><tr><td>Shadow crash</td><td>Recreate if time and budget allow; else migrate</td></tr><tr><td>Network partition</td><td>Gossip timeout; no dual authority; suppress ambiguous promotion</td></tr><tr><td>Predictor unavailable</td><td>Skip speculation; baseline migration only</td></tr></table>
+
+<hr/>
+
+<h2>12. Resolved conflicts and technical resolutions</h2>
+
+<table class="data-table"><tr><th>Conflict</th><th>Resolution</th></tr><tr><td>Professor suggested Dask for parallelism</td><td>Dask **only** for optional training data prep; Flink remains stream engine</td></tr><tr><td>CoppeliaSim / CARLA / SUMO</td><td>**SUMO** integrated for mobility; CARLA optional demo; CoppeliaSim not used</td></tr><tr><td>Predict location vs predict capable server</td><td>**Two-stage:** GRU predicts edge region → capability filter on edge registry</td></tr><tr><td>Multicast in Docker</td><td>App fan-out required for v1; multicast optional</td></tr><tr><td>Central FastAPI vs decentralized PREVAIL</td><td>FastAPI observability only; authority on edge Rust</td></tr><tr><td>Image workload on wrong edge</td><td>Capability tags + filter before shadow; reactive fallback</td></tr></table>
+
+<hr/>
+
+<h2>13. Unresolved decisions (Phase 0 gate)</h2>
+
+<p>Must be ADR-documented before Phase 1 coding:</p>
+
+<table class="data-table"><tr><th>ID</th><th>Decision</th><th>Options / recommendation</th></tr><tr><td>ADR-01</td><td>Flink topology</td><td>**Rec:** Central JM + edge-labeled task managers</td></tr><tr><td>ADR-02</td><td>Shadow state sync mechanism</td><td>Checkpoint delta vs stream replay + periodic align — pick one</td></tr><tr><td>ADR-03</td><td>Sync metric definition</td><td>% lag vs time-behind vs checkpoint sequence</td></tr><tr><td>ADR-04</td><td>Rust↔Flink binding</td><td>**Rec:** Sidecar gRPC in same container</td></tr><tr><td>ADR-05</td><td>Promotion atomicity</td><td>Two-phase ack from old holder</td></tr><tr><td>ADR-06</td><td>Incomplete sync at arrival</td><td>Fallback migrate vs best-effort promote</td></tr><tr><td>ADR-07</td><td>Checkpoint store for baseline</td><td>Local volume vs MinIO</td></tr><tr><td>ADR-08</td><td>Flink version pin</td><td>Lock Java/API compatibility</td></tr><tr><td>ADR-09</td><td>Incomplete sync threshold default</td><td>Numeric default for experiments</td></tr></table>
+
+<hr/>
+
+<h2>14. Implementation phases</h2>
+
+<h3>Phase 0 — Architecture lock (Week 1–2)</h3>
+
+<p><strong>Build:</strong> ADRs ADR-01–09; proto v0; edge region graph; capability schema; metrics schema; failure semantics doc; demo scenario YAML.  </p>
+<p><strong>Depends on:</strong> Nothing.  </p>
+<p><strong>Output gate:</strong> Signed-off proto + ADRs; no implementation until closed.</p>
+
+<h3>Phase 1 — Emulation foundation (Week 2–4)</h3>
+
+<p><strong>Build:</strong> Docker Compose; edge containers; Rust skeleton; QUIC ping; vehicle sim stub; region mapper; SUMO export pipeline (offline trajectory → sim format).  </p>
+<p><strong>Depends on:</strong> Phase 0 proto, region graph.  </p>
+<p><strong>Output gate:</strong> Four edges exchange Protobuf over QUIC; sim drives edge enter/exit events; SUMO trace replays on map coordinates.</p>
+
+<h3>Phase 2 — Flink workload (Week 4–6)</h3>
+
+<p><strong>Build:</strong> Flink job; keyed state; authoritative-only sink; ingress from sim; checkpoint metrics.  </p>
+<p><strong>Depends on:</strong> Phase 1.  </p>
+<p><strong>Output gate:</strong> Steady processing on Edge A; checkpoint size/latency logged.</p>
+
+<h3>Phase 3 — Authority + reactive baseline (Week 6–8)</h3>
+
+<p><strong>Build:</strong> Authority token; handoff detection; reactive migration; output gating; partition tests.  </p>
+<p><strong>Depends on:</strong> Phase 2, ADR-05–07.  </p>
+<p><strong>Output gate:</strong> Baseline A→B migration latencies recorded; zero dual-authority in tests.</p>
+
+<h3>Phase 4 — Warm shadows + promotion (Week 8–11)</h3>
+
+<p><strong>Build:</strong> Shadow manager; stream tee; sync pipeline; suppression; promotion/demotion; discard path.  </p>
+<p><strong>Depends on:</strong> Phase 3, ADR-02–04.  </p>
+<p><strong>Output gate:</strong> Scripted prediction; promotion latency ≪ baseline on golden scenario; wrong-path discard verified.</p>
+
+<h3>Phase 5 — Speculation manager + capabilities (Week 11–12)</h3>
+
+<p><strong>Build:</strong> Full closed loop; capability registry; ETA lead-time gate; budget policy.  </p>
+<p><strong>Depends on:</strong> Phase 4.  </p>
+<p><strong>Output gate:</strong> Image-capability scenario demonstrates filter + fallback; threshold sweeps configurable.</p>
+
+<h3>Phase 6 — ML predictor (Week 8–12, parallel after Phase 0 map)</h3>
+
+<p><strong>Build:</strong> T-Drive/GeoLife ingest; optional Dask prep; GRU train/export; inference integration; destination-matrix baseline.  </p>
+<p><strong>Depends on:</strong> Region graph; Phase 4 for integration test.  </p>
+<p><strong>Output gate:</strong> Live dashboard probabilities; end-to-end learned prediction demo.</p>
+
+<h3>Phase 7 — Observability (Week 10–13, overlap Phase 4+)</h3>
+
+<p><strong>Build:</strong> FastAPI, WebSocket, PostgreSQL ingestion, React map/panels/timeline.  </p>
+<p><strong>Depends on:</strong> TimelineEvent proto; Phase 1 events.  </p>
+<p><strong>Output gate:</strong> Demo UI matches specification (map, prediction, shadow, timeline).</p>
+
+<h3>Phase 8 — Experiments (Week 13–15)</h3>
+
+<p><strong>Build:</strong> Experiment runner; E1–E6 matrix; break-even accuracy scripts; CSV/Postgres export.  </p>
+<p><strong>Depends on:</strong> Phases 3–6.  </p>
+<p><strong>Output gate:</strong> Reproducible plots: latency, overhead, failed speculation, break-even curve.</p>
+
+<h3>Phase 9 — Prototype completion (Week 15–16)</h3>
+
+<p><strong>Build:</strong> One-command demo; golden + fallback scripts; optional CARLA clip; documentation pack.  </p>
+<p><strong>Depends on:</strong> Phase 8.  </p>
+<p><strong>Output gate:</strong> Thesis-ready demo + ADR pack + metric tables.</p>
+
+<hr/>
+
+<h2>15. Dependencies (critical path)</h2>
+
+<pre class="code-block"><code>Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 8 → Phase 9
+<p>                ↘ Phase 6 (parallel) ↗        ↘ Phase 7 (parallel) ↗</code></pre></p>
+
+<p>SUMO trajectory pipeline starts in Phase 1; GRU training starts after region map (Phase 0).</p>
+
+<hr/>
+
+<h2>16. Integration strategy</h2>
+
+<p>1. <strong>Vertical slices:</strong> Each phase delivers measurable milestone before next layer.  </p>
+<p>2. <strong>Proto-first:</strong> All inter-edge features land in <code>proto/</code> before Rust/Flink code.  </p>
+<p>3. <strong>Golden scenario:</strong> Fixed trace <code>scenario_golden.yaml</code> regression-tested from Phase 3 onward.  </p>
+<p>4. <strong>Feature flags:</strong> <code>mode=baseline|prevail</code>, <code>speculation_enabled</code>, <code>capability_check_enabled</code>.  </p>
+<p>5. <strong>Weekly invariant tests:</strong> Single authority; shadow suppression; promotion latency on golden trace.</p>
+
+<hr/>
+
+<h2>17. Testing and validation strategy</h2>
+
+<table class="data-table"><tr><th>Level</th><th>Scope</th></tr><tr><td>Unit</td><td>Region map, ETA, capability filter, token epoch logic</td></tr><tr><td>Integration</td><td>QUIC round-trip; shadow create/discard; promotion ack</td></tr><tr><td>System</td><td>Full Compose stack; golden + wrong-prediction scenarios</td></tr><tr><td>Fault</td><td>Kill authoritative/shadow; iptables partition</td></tr><tr><td>Experiment</td><td>E1 baseline vs PREVAIL; E2 break-even; E3 budget; E4 threshold; E5 lead-time; E6 failures</td></tr><tr><td>Regression</td><td>Same scenario ID → same metric within tolerance</td></tr></table>
+
+<hr/>
+
+<h2>18. Performance and reliability validation</h2>
+
+<p><strong>Metrics (minimum):</strong></p>
+
+<ul><li>Prediction accuracy (top-1, top-k)  </li>
+<li>Transition latency (promotion vs baseline p50/p95)  </li>
+<li>Shadow sync time  </li>
+<li>Bandwidth overhead (tee bytes)  </li>
+<li>CPU/RAM overhead per shadow  </li>
+<li>Failed speculation rate  </li>
+<li>Break-even accuracy (derived)  </li>
+</ul>
+<p><strong>Reliability:</strong> Zero tolerance for dual official output in automated tests; document recovery times for crash scenarios.</p>
+
+<hr/>
+
+<h2>19. Technical risks and mitigations</h2>
+
+<table class="data-table"><tr><th>Risk</th><th>Mitigation</th></tr><tr><td>Flink–Rust complexity</td><td>Sidecar boundary; thin ProcessFunction</td></tr><tr><td>Shadow sync too slow</td><td>Lead-time gate; tune tee; reduce state scope</td></tr><tr><td>Docker not true multicast</td><td>Fan-out from day one</td></tr><tr><td>GRU misaligned with SUMO regions</td><td>Single region graph source of truth</td></tr><tr><td>Scope creep (CARLA)</td><td>CARLA optional; SUMO on critical path only</td></tr><tr><td>pip/tooling env</td><td>Pin containers for build; Rust/Python in Docker dev images</td></tr></table>
+
+<hr/>
+
+<h2>20. Final prototype milestones</h2>
+
+<table class="data-table"><tr><th>Milestone</th><th>Description</th></tr><tr><td>M1</td><td>Edges talk; SUMO trace replays; map shows vehicle</td></tr><tr><td>M2</td><td>Flink runs; baseline migration metrics</td></tr><tr><td>M3</td><td>Warm shadow + promotion beats baseline on golden trace</td></tr><tr><td>M4</td><td>GRU drives speculation; dashboard live</td></tr><tr><td>M5</td><td>Capability + wrong-prediction demos</td></tr><tr><td>M6</td><td>Experiment pack + break-even plot</td></tr><tr><td>M7</td><td>Single-command thesis demo</td></tr></table>
+
+<hr/>
+
+<h2>21. Traceability matrix</h2>
+
+<table class="data-table"><tr><th>Requirement</th><th>Phase</th><th>Components</th></tr><tr><td>Predict next edge</td><td>5, 6</td><td>GRU, destination matrix baseline</td></tr><tr><td>Pre-position state</td><td>4</td><td>Warm Shadow Manager, Flink</td></tr><tr><td>Resource-bounded speculation</td><td>5</td><td>Speculation Manager</td></tr><tr><td>Capability-aware edges</td><td>5</td><td>Edge registry, filter</td></tr><tr><td>Decentralized coordination</td><td>1, 4</td><td>QUIC, edge runtime</td></tr><tr><td>Chain of custody</td><td>3, 4</td><td>Authority token</td></tr><tr><td>Flink workload</td><td>2</td><td>Flink job</td></tr><tr><td>SUMO mobility</td><td>1</td><td>SUMO export, sim</td></tr><tr><td>Distance/ETA</td><td>1, 5</td><td>Region map, ETA</td></tr><tr><td>Traditional baseline</td><td>3</td><td>Reactive migration</td></tr><tr><td>Dashboard</td><td>7</td><td>FastAPI, React, Leaflet</td></tr><tr><td>Research metrics</td><td>8</td><td>PostgreSQL, experiment runner</td></tr></table>
+
+<hr/>
+
+<h2>22. Appendix — Four-word architecture</h2>
+
+<pre class="code-block"><code>PREDICT → PREPARE → PROMOTE → CONTINUE</code></pre>
+
+<hr/>
+
+<p>*End of PREVAIL Master Engineering Plan v2.0*</p>
+
+</body>
+</html>

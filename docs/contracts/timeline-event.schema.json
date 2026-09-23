@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TimelineEvent",
+  "description": "Dashboard/Postgres audit event. Emitter: Prem runtime. Consumer: Ram PG, Prem UI.",
+  "type": "object",
+  "required": ["run_id", "timestamp_ms", "event_type", "message"],
+  "properties": {
+    "run_id": { "type": "string" },
+    "timestamp_ms": { "type": "integer" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "VehicleConnected",
+        "PredictionIssued",
+        "ShadowCreated",
+        "ShadowSyncUpdate",
+        "HandoffDetected",
+        "AuthorityTransferred",
+        "EdgePromoted",
+        "EdgeDemoted",
+        "ShadowDiscarded",
+        "MigrationFallback"
+      ]
+    },
+    "edge_id": { "type": "string" },
+    "payload": { "type": "object" },
+    "message": { "type": "string" }
+  }
+}

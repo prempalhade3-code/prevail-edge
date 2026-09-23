@@ -1,0 +1,63 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+*.pem
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.dask/
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+npm-debug.log*
+.pnpm-store/
+
+# Java / Flink
+*.class
+*.jar
+!flink/lib/.gitkeep
+.idea/
+
+# ML artifacts (keep small exported models if intentional)
+python/predictor/runs/
+*.pt
+*.pth
+!python/predictor/models/.gitkeep
+
+# Docker
+*.log
+
+# SUMO / sim outputs (large)
+sim/output/
+experiments/results/
+*.fcd.xml
+*.rou.xml
+
+# Postgres / local data
+*.sql.backup
+pgdata/
+
+# Editor
+.vscode/
+!.vscode/extensions.json
+*.swp
+
+# Docs PDF build (keep source md; PDF optional in repo)
+docs/node_modules/
