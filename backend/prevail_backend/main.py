@@ -1,12 +1,12 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .runtime_client import RuntimeClient
+from .sim_client import sim_status
 from .timeline_store import TimelineStore
 
 runtime = RuntimeClient()
@@ -110,6 +110,39 @@ async def ingest_trajectory(sample: dict):
     return await runtime.ingest_trajectory(sample)
 
 
+@app.get("/v1/sim/status")
+async def sim_engine_status():
+    """CARLA / simulation engine connection status."""
+    return await sim_status()
+
+
+@app.websocket("/ws/sim")
+async def ws_sim_engine(websocket: WebSocket):
+    """Proxy CARLA chase-camera stream from simulation bridge."""
+    await websocket.accept()
+    bridge_ws = settings.sim_bridge_ws_url
+    try:
+        import websockets
+
+        async with websockets.connect(bridge_ws, max_size=10_000_000) as upstream:
+            async for message in upstream:
+                if isinstance(message, bytes):
+                    await websocket.send_bytes(message)
+                else:
+                    await websocket.send_text(message)
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        while True:
+            try:
+                status = await sim_status()
+                status["proxy_error"] = str(exc)
+                await websocket.send_text(json.dumps({"type": "status", "status": status}))
+                await asyncio.sleep(2.0)
+            except WebSocketDisconnect:
+                break
+
+
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket):
     """Proxy live snapshots from Rust runtime WebSocket (fallback: poll snapshot)."""
@@ -131,6 +164,7 @@ async def ws_live(websocket: WebSocket):
                 await asyncio.sleep(0.8)
             except WebSocketDisconnect:
                 break
+
 
 
 def run():
