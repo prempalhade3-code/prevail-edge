@@ -1,4 +1,5 @@
-import { EdgeMap } from "./components/EdgeMap";
+import { EngineViewport } from "./components/EngineViewport";
+import { MinimapPanel } from "./components/MinimapPanel";
 import { CurrentNodePanel } from "./components/CurrentNodePanel";
 import { PredictionPanel } from "./components/PredictionPanel";
 import { ShadowPanel } from "./components/ShadowPanel";
@@ -6,45 +7,50 @@ import { TimelinePanel } from "./components/TimelinePanel";
 import { useLiveSnapshot } from "./hooks/useLiveSnapshot";
 
 export default function App() {
-  const { snapshot, connected, error, advanceDemo } = useLiveSnapshot();
+  const { snapshot, connected, error } = useLiveSnapshot();
 
   return (
-    <div className="min-h-screen p-4 md:p-6 max-w-7xl mx-auto">
-      <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">PREVAIL</h1>
-          <p className="text-sm text-slate-400">
-            Predict · Pre-position · Promote · Continue
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span
-            className={`text-xs px-2 py-1 rounded ${connected ? "bg-emerald-900 text-emerald-300" : "bg-red-900 text-red-300"}`}
-          >
-            {connected ? "Live" : "Polling / reconnecting"}
+    <div className="min-h-screen bg-[#06080f] text-slate-100">
+      <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800/80 bg-black/40 backdrop-blur-sm">
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-black tracking-widest text-cyan-400">PREVAIL</h1>
+          <span className="text-[10px] text-slate-500 uppercase tracking-wider hidden sm:inline">
+            CARLA Engine · Edge Computing Simulation
           </span>
-          <button
-            type="button"
-            onClick={() => advanceDemo().catch(console.error)}
-            className="px-4 py-2 rounded bg-prevail-accent hover:bg-blue-600 text-sm font-medium"
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase tracking-wide ${
+              connected
+                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                : "bg-red-950 text-red-400 border border-red-800"
+            }`}
           >
-            Advance demo step
-          </button>
+            {connected ? "● PREVAIL Live" : "○ Reconnecting"}
+          </span>
         </div>
       </header>
 
       {error && (
-        <div className="mb-4 p-3 rounded bg-amber-950 border border-amber-700 text-amber-200 text-sm">
+        <div className="mx-4 mt-2 p-2 rounded bg-amber-950/80 border border-amber-800 text-amber-200 text-xs">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <EdgeMap snapshot={snapshot} />
-          <TimelinePanel events={snapshot?.timeline ?? []} />
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-3 p-3 h-[calc(100vh-52px)]">
+        {/* PRIMARY: CARLA / Unreal game-engine video stream (NOT browser WebGL) */}
+        <div className="flex flex-col gap-3 min-h-0">
+          <div className="flex-1 min-h-[420px]">
+            <EngineViewport />
+          </div>
+          <div className="h-32 shrink-0">
+            <TimelinePanel events={snapshot?.timeline ?? []} />
+          </div>
         </div>
-        <div className="space-y-4">
+
+        {/* SIDE: geographic map + PREVAIL intelligence (separate from 3D engine) */}
+        <aside className="flex flex-col gap-3 overflow-y-auto min-h-0">
+          <MinimapPanel snapshot={snapshot} />
           <CurrentNodePanel
             edgeId={snapshot?.current_edge_id ?? "edge-a"}
             authority={
@@ -61,12 +67,8 @@ export default function App() {
             currentEdge={snapshot?.current_edge_id ?? "edge-a"}
           />
           <ShadowPanel shadows={snapshot?.shadows ?? []} />
-        </div>
+        </aside>
       </div>
-
-      <footer className="mt-8 text-xs text-slate-600 text-center">
-        Mode: {snapshot?.mode ?? "—"} · Run: {snapshot?.run_id ?? "—"}
-      </footer>
     </div>
   );
 }
