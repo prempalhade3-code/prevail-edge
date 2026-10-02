@@ -1,30 +1,37 @@
-"""HTTP client for Prem's Rust prevail-runtime (core source of truth)."""
-
-from typing import Any
-
 import httpx
 
 from .config import settings
 
 
 class RuntimeClient:
-    def __init__(self, base_url: str | None = None) -> None:
-        self.base_url = (base_url or settings.runtime_url).rstrip("/")
+    def __init__(self) -> None:
+        self.base_url = settings.runtime_url.rstrip("/")
 
-    async def get(self, path: str) -> Any:
+    async def get(self, path: str):
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{self.base_url}{path}")
-            r.raise_for_status()
-            return r.json()
+            resp = await client.get(f"{self.base_url}{path}")
+            resp.raise_for_status()
+            return resp.json()
 
-    async def post(self, path: str) -> Any:
+    async def post(self, path: str, body: dict | None = None):
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{self.base_url}{path}")
-            r.raise_for_status()
-            return r.json()
+            resp = await client.post(f"{self.base_url}{path}", json=body or {})
+            resp.raise_for_status()
+            return resp.json()
 
-    async def snapshot(self) -> dict[str, Any]:
+    async def snapshot(self):
         return await self.get("/v1/snapshot")
 
-    async def advance_demo(self) -> dict[str, Any]:
+    async def advance_demo(self):
         return await self.post("/v1/demo/advance")
+
+    async def ingest_trajectory(self, sample: dict):
+        return await self.post("/v1/trajectory", sample)
+
+    async def health(self) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{self.base_url}/health")
+                return resp.status_code == 200
+        except httpx.HTTPError:
+            return False

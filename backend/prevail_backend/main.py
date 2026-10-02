@@ -2,19 +2,45 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .runtime_client import RuntimeClient
+from .timeline_store import TimelineStore
 
 runtime = RuntimeClient()
+timeline_store = TimelineStore(settings.database_url)
+
+
+async def _timeline_sync_loop():
+    while True:
+        try:
+            if timeline_store.enabled:
+                snap = await runtime.snapshot()
+                inserted = timeline_store.sync_events(
+                    snap.get("run_id", "run-demo-1"),
+                    snap.get("timeline", []),
+                )
+                if inserted:
+                    print(f"[backend] persisted {inserted} timeline events")
+        except Exception as exc:
+            print(f"[backend] timeline sync error: {exc}")
+        await asyncio.sleep(5.0)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    sync_task = None
+    if timeline_store.enabled:
+        sync_task = asyncio.create_task(_timeline_sync_loop())
     yield
+    if sync_task:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="PREVAIL Observability API", version="0.1.0", lifespan=lifespan)
@@ -30,7 +56,13 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "prevail-backend"}
+    runtime_ok = await runtime.health()
+    return {
+        "status": "ok" if runtime_ok else "degraded",
+        "service": "prevail-backend",
+        "runtime_reachable": runtime_ok,
+        "postgres_enabled": timeline_store.enabled,
+    }
 
 
 @app.get("/v1/snapshot")
@@ -71,6 +103,11 @@ async def metrics():
 @app.post("/v1/demo/advance")
 async def advance_demo():
     return await runtime.advance_demo()
+
+
+@app.post("/v1/trajectory")
+async def ingest_trajectory(sample: dict):
+    return await runtime.ingest_trajectory(sample)
 
 
 @app.websocket("/ws/live")
