@@ -1,8 +1,11 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .runtime_client import RuntimeClient
@@ -165,6 +168,11 @@ async def ws_live(websocket: WebSocket):
             except WebSocketDisconnect:
                 break
 
+
+# Serve built dashboard from backend when frontend/dist exists (skip Vite dev server).
+_UI_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _UI_DIST.is_dir() and (_UI_DIST / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(_UI_DIST), html=True), name="dashboard")
 
 
 def run():
