@@ -1,0 +1,5 @@
+id: empty
+stream_file: tests/integration/fixtures/missing.jsonl
+session_id: x
+mode: baseline
+repeats: 1
