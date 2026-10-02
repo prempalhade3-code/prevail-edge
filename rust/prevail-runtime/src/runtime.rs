@@ -101,7 +101,8 @@ impl PrevailRuntime {
     }
 
     pub async fn on_trajectory(&mut self, sample: TrajectorySample) {
-        if sample.edge_id != self.edge_id {
+        let edge_changed = sample.edge_id != self.edge_id;
+        if edge_changed {
             let mut payload = HashMap::new();
             payload.insert("from_edge".into(), self.edge_id.clone());
             payload.insert("to_edge".into(), sample.edge_id.clone());
@@ -111,6 +112,8 @@ impl PrevailRuntime {
                 "Vehicle crossed edge boundary",
                 payload,
             );
+            self.refresh_prediction().await;
+            self.run_speculation_cycle().await;
             self.handle_handoff(&sample.edge_id).await;
         }
         self.edge_id = sample.edge_id;
