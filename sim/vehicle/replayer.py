@@ -1,8 +1,11 @@
 import json
+import os
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Ensure workspace root is in path to import python.mobility
 root_dir = Path(__file__).resolve().parents[2]
@@ -46,10 +49,26 @@ def generate_trace_samples(
     return samples
 
 
+def post_sample(url: str, sample: Dict[str, Any]) -> None:
+    """POST trajectory sample to runtime or backend ingest endpoint."""
+    payload = json.dumps(sample).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        if resp.status >= 400:
+            raise urllib.error.HTTPError(url, resp.status, "ingest failed", resp.headers, None)
+
+
 def run_replayer(
     interval_sec: float = 1.0,
     continuous: bool = False,
     output_file: str = None,
+    runtime_url: Optional[str] = None,
+    predictor_url: Optional[str] = None,
 ):
     """Runs the replayer emitting JSON lines to stdout / log and optional file."""
     mapper = RegionMapper()
@@ -57,7 +76,12 @@ def run_replayer(
     last_edge_id = None
     step_count = 0
 
+    runtime_url = runtime_url or os.environ.get("PREVAIL_RUNTIME_URL")
+    predictor_url = predictor_url or os.environ.get("PREVAIL_PREDICTOR_URL")
+
     print(f"[vehicle-sim] Starting trajectory replayer for session={session_id}...", file=sys.stderr)
+    if runtime_url:
+        print(f"[vehicle-sim] Ingest target: {runtime_url.rstrip('/')}/v1/trajectory", file=sys.stderr)
 
     file_handle = open(output_file, "a", encoding="utf-8") if output_file else None
 
@@ -80,6 +104,28 @@ def run_replayer(
 
                 json_line = json.dumps(sample)
                 print(json_line, flush=True)
+
+                if runtime_url:
+                    try:
+                        post_sample(f"{runtime_url.rstrip('/')}/v1/trajectory", sample)
+                    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+                        print(f"[vehicle-sim] WARN: runtime ingest failed: {exc}", file=sys.stderr)
+
+                if predictor_url:
+                    try:
+                        post_sample(
+                            f"{predictor_url.rstrip('/')}/trajectory",
+                            {
+                                "session_id": sample["session_id"],
+                                "edge_id": sample["edge_id"],
+                                "timestamp_ms": sample["timestamp_ms"],
+                                "latitude": sample["latitude"],
+                                "longitude": sample["longitude"],
+                                "speed_mps": sample["speed_mps"],
+                            },
+                        )
+                    except (urllib.error.URLError, urllib.error.HTTPError):
+                        pass
 
                 if file_handle:
                     file_handle.write(json_line + "\n")
@@ -107,4 +153,9 @@ def run_replayer(
 
 if __name__ == "__main__":
     is_continuous = "--continuous" in sys.argv
-    run_replayer(interval_sec=1.0, continuous=is_continuous)
+    run_replayer(
+        interval_sec=1.0,
+        continuous=is_continuous,
+        runtime_url=os.environ.get("PREVAIL_RUNTIME_URL"),
+        predictor_url=os.environ.get("PREVAIL_PREDICTOR_URL"),
+    )
