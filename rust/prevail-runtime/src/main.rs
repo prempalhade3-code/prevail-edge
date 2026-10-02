@@ -41,7 +41,8 @@ async fn main() {
         &predictor_url,
     )));
 
-    {
+    let live_sim = env::var("PREVAIL_LIVE_SIM").is_ok() || env::var("PREVAIL_SKIP_DEMO_BOOTSTRAP").is_ok();
+    if !live_sim {
         let mut rt = runtime.write().await;
         rt.advance_demo().await;
     }
