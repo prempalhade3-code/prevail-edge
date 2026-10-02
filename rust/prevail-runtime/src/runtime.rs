@@ -29,6 +29,9 @@ pub struct PrevailRuntime {
     demo_step: usize,
     vehicle_latitude: Option<f64>,
     vehicle_longitude: Option<f64>,
+    vehicle_heading: Option<f64>,
+    vehicle_trail: Vec<crate::types::VehicleTrailPoint>,
+    traffic_vehicles: Vec<crate::types::TrafficVehicle>,
 }
 
 impl PrevailRuntime {
@@ -60,7 +63,14 @@ impl PrevailRuntime {
             demo_step: 0,
             vehicle_latitude: None,
             vehicle_longitude: None,
+            vehicle_heading: None,
+            vehicle_trail: Vec::new(),
+            traffic_vehicles: Vec::new(),
         }
+    }
+
+    pub fn update_traffic(&mut self, vehicles: Vec<crate::types::TrafficVehicle>) {
+        self.traffic_vehicles = vehicles;
     }
 
     fn emit(&mut self, event_type: &str, edge_id: Option<&str>, message: &str, payload: HashMap<String, String>) {
@@ -276,6 +286,9 @@ impl PrevailRuntime {
             mode: self.mode.clone(),
             vehicle_latitude: self.vehicle_latitude,
             vehicle_longitude: self.vehicle_longitude,
+            vehicle_heading: self.vehicle_heading,
+            vehicle_trail: self.vehicle_trail.clone(),
+            traffic_vehicles: self.traffic_vehicles.clone(),
         }
     }
 
