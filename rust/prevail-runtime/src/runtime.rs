@@ -1,4 +1,5 @@
 use crate::authority::AuthorityManager;
+use crate::config::{load_capabilities_from_file, load_topology_from_file, resolve_config_paths};
 use crate::predictor::{PredictorClient, mock_prediction};
 use crate::shadow::{ShadowError, ShadowManager};
 use crate::speculation::evaluate_speculation;
@@ -26,12 +27,21 @@ pub struct PrevailRuntime {
     transport: Arc<dyn ControlTransport>,
     predictor_url: String,
     demo_step: usize,
+    vehicle_latitude: Option<f64>,
+    vehicle_longitude: Option<f64>,
 }
 
 impl PrevailRuntime {
     pub fn new_lab(run_id: &str, session_id: &str, secret: &str, predictor_url: &str) -> Self {
-        let capabilities = default_capabilities();
-        let topology_coords = default_topology();
+        let (regions_path, caps_path) = resolve_config_paths();
+        let capabilities = caps_path
+            .as_deref()
+            .and_then(load_capabilities_from_file)
+            .unwrap_or_else(default_capabilities);
+        let topology_coords = regions_path
+            .as_deref()
+            .and_then(load_topology_from_file)
+            .unwrap_or_else(default_topology);
         let peers: Vec<String> = capabilities.keys().cloned().collect();
         Self {
             run_id: run_id.to_string(),
@@ -48,6 +58,8 @@ impl PrevailRuntime {
             transport: Arc::new(QuicTransportStub::new("edge-a", peers)),
             predictor_url: predictor_url.to_string(),
             demo_step: 0,
+            vehicle_latitude: None,
+            vehicle_longitude: None,
         }
     }
 
@@ -80,9 +92,20 @@ impl PrevailRuntime {
 
     pub async fn on_trajectory(&mut self, sample: TrajectorySample) {
         if sample.edge_id != self.edge_id {
+            let mut payload = HashMap::new();
+            payload.insert("from_edge".into(), self.edge_id.clone());
+            payload.insert("to_edge".into(), sample.edge_id.clone());
+            self.emit(
+                "HandoffDetected",
+                Some(&sample.edge_id),
+                "Vehicle crossed edge boundary",
+                payload,
+            );
             self.handle_handoff(&sample.edge_id).await;
         }
         self.edge_id = sample.edge_id;
+        self.vehicle_latitude = Some(sample.latitude);
+        self.vehicle_longitude = Some(sample.longitude);
     }
 
     async fn handle_handoff(&mut self, new_edge: &str) {
@@ -251,6 +274,8 @@ impl PrevailRuntime {
             topology,
             timeline: self.timeline.clone(),
             mode: self.mode.clone(),
+            vehicle_latitude: self.vehicle_latitude,
+            vehicle_longitude: self.vehicle_longitude,
         }
     }
 

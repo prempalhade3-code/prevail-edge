@@ -101,6 +101,10 @@ pub struct SystemSnapshot {
     pub topology: Vec<TopologyNode>,
     pub timeline: Vec<TimelineEvent>,
     pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_latitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_longitude: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
