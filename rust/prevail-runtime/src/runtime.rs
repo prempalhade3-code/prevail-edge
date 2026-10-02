@@ -116,6 +116,15 @@ impl PrevailRuntime {
         self.edge_id = sample.edge_id;
         self.vehicle_latitude = Some(sample.latitude);
         self.vehicle_longitude = Some(sample.longitude);
+        self.vehicle_heading = sample.heading_deg;
+        self.vehicle_trail.push(crate::types::VehicleTrailPoint {
+            latitude: sample.latitude,
+            longitude: sample.longitude,
+        });
+        if self.vehicle_trail.len() > 120 {
+            let drain = self.vehicle_trail.len() - 120;
+            self.vehicle_trail.drain(0..drain);
+        }
     }
 
     async fn handle_handoff(&mut self, new_edge: &str) {
