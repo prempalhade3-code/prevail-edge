@@ -49,4 +49,6 @@ export interface SystemSnapshot {
   topology: TopologyNode[];
   timeline: TimelineEvent[];
   mode: string;
+  vehicle_latitude?: number;
+  vehicle_longitude?: number;
 }
