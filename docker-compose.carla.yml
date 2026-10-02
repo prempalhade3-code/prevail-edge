@@ -1,0 +1,23 @@
+# CARLA simulation engine (Linux + NVIDIA GPU required)
+# Usage: docker compose -f docker-compose.carla.yml up
+#
+# After CARLA is running, start on host:
+#   python sim/carla/prevail_bridge.py
+#   scripts/run-prevail-core.sh
+
+services:
+  carla:
+    image: carlasim/carla:0.9.15
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "2000-2002:2000-2002"
+    command: ./CarlaUE4.sh -prefernvidia -quality-level=Epic -RenderOffScreen

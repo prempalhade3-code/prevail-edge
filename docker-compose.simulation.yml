@@ -1,0 +1,43 @@
+# Full simulation engine stack for Mac (Apple Silicon) via Docker amd64 emulation.
+# Requires: Docker Desktop running, 16GB+ RAM, ~15GB disk for CARLA image.
+#
+# PREVAIL core (runtime/backend/road_sim) must run on HOST first:
+#   bash scripts/run-prevail-core.sh
+#
+# Then:
+#   docker compose -f docker-compose.simulation.yml up --build
+#
+# Open http://127.0.0.1:8000
+
+services:
+  carla:
+    image: carlasim/carla:0.9.15
+    platform: linux/amd64
+    ports:
+      - "2000-2002:2000-2002"
+    # No NVIDIA on Mac — CPU offscreen render (slow first boot ~2-3 min)
+    command: >
+      ./CarlaUE4.sh -RenderOffScreen -quality-level=Low -nosound
+    shm_size: "2gb"
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+  carla-bridge:
+    build:
+      context: .
+      dockerfile: docker/carla-bridge/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "8765:8765"
+      - "8766:8766"
+    environment:
+      CARLA_HOST: carla
+      CARLA_PORT: "2000"
+      PREVAIL_RUNTIME_URL: http://host.docker.internal:8090
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - carla
+    restart: on-failure

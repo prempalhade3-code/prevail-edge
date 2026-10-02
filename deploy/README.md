@@ -13,6 +13,8 @@ Start the full topology stack with one command:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build -d
+
+Services: `edge-a`…`edge-d`, `vehicle-sim`, `postgres` (schema auto-init), `predictor` (:8091).
 ```
 
 Check status and verify container healthchecks are green:

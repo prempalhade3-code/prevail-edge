@@ -1,0 +1,5 @@
+# Install after CARLA server — copy matching egg from CARLA release:
+#   pip install path/to/carla-0.9.15-py3.10-linux-x86_64.egg
+numpy>=1.24.0
+Pillow>=10.0.0
+websockets>=12.0

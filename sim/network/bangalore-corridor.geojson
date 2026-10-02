@@ -1,0 +1,57 @@
+{
+  "type": "FeatureCollection",
+  "name": "bangalore-prevail-corridor",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "MG-Road-East-Spine", "lanes": 4, "speed_limit_mps": 16.7 },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.5850, 12.9800],
+          [77.5885, 12.9785],
+          [77.5910, 12.9765],
+          [77.5930, 12.9745],
+          [77.5946, 12.9716],
+          [77.5965, 12.9720],
+          [77.5990, 12.9735],
+          [77.6015, 12.9745],
+          [77.6040, 12.9752],
+          [77.6050, 12.9750],
+          [77.6065, 12.9735],
+          [77.6080, 12.9710],
+          [77.6095, 12.9685],
+          [77.6100, 12.9650]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "North-Loop-Connector", "lanes": 2, "speed_limit_mps": 11.1 },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.5850, 12.9800],
+          [77.5870, 12.9780],
+          [77.5900, 12.9755],
+          [77.5925, 12.9730],
+          [77.5946, 12.9716]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "East-South-Highway", "lanes": 3, "speed_limit_mps": 19.4 },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.6050, 12.9750],
+          [77.6068, 12.9728],
+          [77.6085, 12.9700],
+          [77.6092, 12.9675],
+          [77.6100, 12.9650]
+        ]
+      }
+    }
+  ]
+}

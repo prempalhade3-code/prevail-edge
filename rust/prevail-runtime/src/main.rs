@@ -20,6 +20,20 @@ async fn main() {
     let predictor_url = env::var("PREVAIL_PREDICTOR_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:8091".into());
 
+    // Default deploy config paths when running from repo root
+    if env::var("PREVAIL_EDGE_REGIONS_PATH").is_err() {
+        let default_regions = "deploy/config/edge-regions.json";
+        if std::path::Path::new(default_regions).exists() {
+            env::set_var("PREVAIL_EDGE_REGIONS_PATH", default_regions);
+        }
+    }
+    if env::var("PREVAIL_EDGE_CAPABILITIES_PATH").is_err() {
+        let default_caps = "deploy/config/edge-capabilities.json";
+        if std::path::Path::new(default_caps).exists() {
+            env::set_var("PREVAIL_EDGE_CAPABILITIES_PATH", default_caps);
+        }
+    }
+
     let runtime = Arc::new(RwLock::new(PrevailRuntime::new_lab(
         "run-demo-1",
         "session-vehicle-1",
@@ -27,7 +41,8 @@ async fn main() {
         &predictor_url,
     )));
 
-    {
+    let live_sim = env::var("PREVAIL_LIVE_SIM").is_ok() || env::var("PREVAIL_SKIP_DEMO_BOOTSTRAP").is_ok();
+    if !live_sim {
         let mut rt = runtime.write().await;
         rt.advance_demo().await;
     }

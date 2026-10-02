@@ -2,9 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
+html,
+body,
+#root {
   margin: 0;
+  height: 100%;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: #06080f;
 }
 
 .leaflet-container {

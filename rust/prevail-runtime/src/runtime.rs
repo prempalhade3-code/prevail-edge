@@ -1,4 +1,5 @@
 use crate::authority::AuthorityManager;
+use crate::config::{load_capabilities_from_file, load_topology_from_file, resolve_config_paths};
 use crate::predictor::{PredictorClient, mock_prediction};
 use crate::shadow::{ShadowError, ShadowManager};
 use crate::speculation::evaluate_speculation;
@@ -26,12 +27,24 @@ pub struct PrevailRuntime {
     transport: Arc<dyn ControlTransport>,
     predictor_url: String,
     demo_step: usize,
+    vehicle_latitude: Option<f64>,
+    vehicle_longitude: Option<f64>,
+    vehicle_heading: Option<f64>,
+    vehicle_trail: Vec<crate::types::VehicleTrailPoint>,
+    traffic_vehicles: Vec<crate::types::TrafficVehicle>,
 }
 
 impl PrevailRuntime {
     pub fn new_lab(run_id: &str, session_id: &str, secret: &str, predictor_url: &str) -> Self {
-        let capabilities = default_capabilities();
-        let topology_coords = default_topology();
+        let (regions_path, caps_path) = resolve_config_paths();
+        let capabilities = caps_path
+            .as_deref()
+            .and_then(load_capabilities_from_file)
+            .unwrap_or_else(default_capabilities);
+        let topology_coords = regions_path
+            .as_deref()
+            .and_then(load_topology_from_file)
+            .unwrap_or_else(default_topology);
         let peers: Vec<String> = capabilities.keys().cloned().collect();
         Self {
             run_id: run_id.to_string(),
@@ -48,7 +61,16 @@ impl PrevailRuntime {
             transport: Arc::new(QuicTransportStub::new("edge-a", peers)),
             predictor_url: predictor_url.to_string(),
             demo_step: 0,
+            vehicle_latitude: None,
+            vehicle_longitude: None,
+            vehicle_heading: None,
+            vehicle_trail: Vec::new(),
+            traffic_vehicles: Vec::new(),
         }
+    }
+
+    pub fn update_traffic(&mut self, vehicles: Vec<crate::types::TrafficVehicle>) {
+        self.traffic_vehicles = vehicles;
     }
 
     fn emit(&mut self, event_type: &str, edge_id: Option<&str>, message: &str, payload: HashMap<String, String>) {
@@ -79,10 +101,33 @@ impl PrevailRuntime {
     }
 
     pub async fn on_trajectory(&mut self, sample: TrajectorySample) {
-        if sample.edge_id != self.edge_id {
+        let edge_changed = sample.edge_id != self.edge_id;
+        if edge_changed {
+            let mut payload = HashMap::new();
+            payload.insert("from_edge".into(), self.edge_id.clone());
+            payload.insert("to_edge".into(), sample.edge_id.clone());
+            self.emit(
+                "HandoffDetected",
+                Some(&sample.edge_id),
+                "Vehicle crossed edge boundary",
+                payload,
+            );
+            self.refresh_prediction().await;
+            self.run_speculation_cycle().await;
             self.handle_handoff(&sample.edge_id).await;
         }
         self.edge_id = sample.edge_id;
+        self.vehicle_latitude = Some(sample.latitude);
+        self.vehicle_longitude = Some(sample.longitude);
+        self.vehicle_heading = sample.heading_deg;
+        self.vehicle_trail.push(crate::types::VehicleTrailPoint {
+            latitude: sample.latitude,
+            longitude: sample.longitude,
+        });
+        if self.vehicle_trail.len() > 120 {
+            let drain = self.vehicle_trail.len() - 120;
+            self.vehicle_trail.drain(0..drain);
+        }
     }
 
     async fn handle_handoff(&mut self, new_edge: &str) {
@@ -251,6 +296,11 @@ impl PrevailRuntime {
             topology,
             timeline: self.timeline.clone(),
             mode: self.mode.clone(),
+            vehicle_latitude: self.vehicle_latitude,
+            vehicle_longitude: self.vehicle_longitude,
+            vehicle_heading: self.vehicle_heading,
+            vehicle_trail: self.vehicle_trail.clone(),
+            traffic_vehicles: self.traffic_vehicles.clone(),
         }
     }
 

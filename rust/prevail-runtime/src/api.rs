@@ -1,5 +1,5 @@
 use crate::runtime::SharedRuntime;
-use crate::types::SystemSnapshot;
+use crate::types::{SystemSnapshot, TrafficVehicle, TrajectorySample};
 use axum::{
     extract::{State, ws::{Message, WebSocket, WebSocketUpgrade}, Query},
     response::IntoResponse,
@@ -32,6 +32,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/events", get(events))
         .route("/v1/metrics", get(metrics))
         .route("/v1/demo/advance", post(advance_demo))
+        .route("/v1/trajectory", post(ingest_trajectory))
+        .route("/v1/traffic", post(update_traffic))
         .route("/v1/sidecar/authority", get(sidecar_authority))
         .route("/ws/live", get(ws_live))
         .layer(cors)
@@ -92,6 +94,24 @@ async fn advance_demo(State(state): State<AppState>) -> impl IntoResponse {
     let mut rt = state.runtime.write().await;
     rt.advance_demo().await;
     Json(rt.snapshot())
+}
+
+async fn ingest_trajectory(
+    State(state): State<AppState>,
+    Json(sample): Json<TrajectorySample>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    rt.on_trajectory(sample).await;
+    Json(rt.snapshot())
+}
+
+async fn update_traffic(
+    State(state): State<AppState>,
+    Json(vehicles): Json<Vec<TrafficVehicle>>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    rt.update_traffic(vehicles);
+    Json(serde_json::json!({ "status": "ok", "count": rt.snapshot().traffic_vehicles.len() }))
 }
 
 #[derive(Deserialize)]

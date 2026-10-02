@@ -101,6 +101,31 @@ pub struct SystemSnapshot {
     pub topology: Vec<TopologyNode>,
     pub timeline: Vec<TimelineEvent>,
     pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_latitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_longitude: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_heading: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vehicle_trail: Vec<VehicleTrailPoint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traffic_vehicles: Vec<TrafficVehicle>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VehicleTrailPoint {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrafficVehicle {
+    pub vehicle_id: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub heading_deg: f64,
+    pub speed_mps: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
