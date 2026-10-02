@@ -94,11 +94,34 @@ services:
       POSTGRES_PASSWORD: prevail_password
     ports:
       - "5432:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prevail -d prevail"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - prevail-net
+
+  predictor:
+    build:
+      context: ..
+      dockerfile: python/predictor/Dockerfile
+    container_name: prevail-predictor
+    hostname: predictor
+    ports:
+      - "8091:8091"
+    environment:
+      PREVAIL_EDGE_REGIONS_PATH: /app/deploy/config/edge-regions.json
+    volumes:
+      - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8091/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     networks:
       - prevail-net
 

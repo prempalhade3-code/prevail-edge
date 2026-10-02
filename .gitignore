@@ -5,6 +5,7 @@ Thumbs.db
 # Secrets
 .env
 .env.*
+!.env.example
 *.pem
 credentials.json
 
