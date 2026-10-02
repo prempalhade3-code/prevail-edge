@@ -1,0 +1,23 @@
+{
+  "id": "golden",
+  "description": "Deterministic edge handoff trace for PREVAIL vs baseline comparison",
+  "stream_file": "sim/fixtures/sample-trajectory.jsonl",
+  "session_id": "sim-vehicle-01",
+  "mode": "prevail",
+  "repeats": 3,
+  "expected_handoffs": [
+    {"from": "edge-a", "to": "edge-b"},
+    {"from": "edge-b", "to": "edge-c"}
+  ],
+  "baseline": {
+    "checkpoint_save_ms": 120,
+    "checkpoint_restore_ms": 350,
+    "network_overhead_ms": 80
+  },
+  "metrics": [
+    "migration_latency_ms",
+    "samples_processed",
+    "gated_output_count",
+    "handoff_count"
+  ]
+}
