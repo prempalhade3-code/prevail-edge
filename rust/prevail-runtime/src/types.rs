@@ -109,6 +109,8 @@ pub struct SystemSnapshot {
     pub vehicle_heading: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vehicle_speed_mps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_updated_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vehicle_trail: Vec<VehicleTrailPoint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
