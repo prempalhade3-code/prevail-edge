@@ -1,6 +1,7 @@
 pub mod api;
 pub mod authority;
 pub mod config;
+pub mod mesh;
 pub mod predictor;
 pub mod quic;
 pub mod runtime;
