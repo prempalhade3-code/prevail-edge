@@ -159,7 +159,7 @@ async def ws_live(websocket: WebSocket):
         try:
             snap = await runtime.snapshot()
             await websocket.send_text(json.dumps(snap))
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.08)
         except WebSocketDisconnect:
             break
         except Exception:
