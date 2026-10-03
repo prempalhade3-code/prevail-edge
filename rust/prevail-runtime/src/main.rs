@@ -1,4 +1,5 @@
 use prevail_runtime::api::{serve, AppState};
+use prevail_runtime::config::load_session_config;
 use prevail_runtime::runtime::PrevailRuntime;
 use std::env;
 use std::net::SocketAddr;
@@ -34,11 +35,30 @@ async fn main() {
         }
     }
 
-    let runtime = Arc::new(RwLock::new(PrevailRuntime::new_lab(
-        "run-demo-1",
-        "session-vehicle-1",
-        "lab-secret",
+    if env::var("PREVAIL_SESSION_CONFIG_PATH").is_err() {
+        let default_session = "deploy/config/session.json";
+        if std::path::Path::new(default_session).exists() {
+            env::set_var("PREVAIL_SESSION_CONFIG_PATH", default_session);
+        }
+    }
+
+    let session = load_session_config();
+    let local_edge_id =
+        env::var("PREVAIL_EDGE_ID").unwrap_or_else(|_| session.bootstrap_edge_id.clone());
+
+    tracing::info!(
+        edge = %local_edge_id,
+        session = %session.session_id,
+        run = %session.run_id,
+        "starting prevail-runtime"
+    );
+
+    let runtime = Arc::new(RwLock::new(PrevailRuntime::new_for_edge(
+        &session.run_id,
+        &session.session_id,
+        &session.authority_secret,
         &predictor_url,
+        &local_edge_id,
     )));
 
     let live_sim = env::var("PREVAIL_LIVE_SIM").is_ok() || env::var("PREVAIL_SKIP_DEMO_BOOTSTRAP").is_ok();
