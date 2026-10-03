@@ -214,20 +214,23 @@ pub fn lab_client_config() -> Result<ClientConfig, QuicError> {
 }
 
 /// Handles one inbound control message and produces the reply.
+///
+/// Async because real handlers take the runtime lock to mutate shadow and
+/// authority state.
+#[async_trait::async_trait]
 pub trait ControlHandler: Send + Sync + 'static {
-    fn handle(&self, envelope: ControlEnvelope) -> ControlEnvelope;
+    async fn handle(&self, envelope: ControlEnvelope) -> ControlEnvelope;
 }
 
 /// Replies to [`control_envelope::Payload::PeerPing`] and ignores the rest.
-///
-/// M1 proves the transport; M2 replaces this with the shadow and promotion
-/// handler that mutates runtime state.
+/// Used by the transport tests; running edges use `mesh::MeshControlHandler`.
 pub struct PingOnlyHandler {
     pub local_edge_id: String,
 }
 
+#[async_trait::async_trait]
 impl ControlHandler for PingOnlyHandler {
-    fn handle(&self, envelope: ControlEnvelope) -> ControlEnvelope {
+    async fn handle(&self, envelope: ControlEnvelope) -> ControlEnvelope {
         let payload = match envelope.payload {
             Some(control_envelope::Payload::PeerPing(ping)) => {
                 Some(control_envelope::Payload::PeerPong(crate::proto::PeerPong {
@@ -238,12 +241,21 @@ impl ControlHandler for PingOnlyHandler {
             _ => None,
         };
 
-        ControlEnvelope {
-            from_edge_id: self.local_edge_id.clone(),
-            sent_at_ms: now_ms(),
-            correlation_id: envelope.correlation_id,
-            payload,
-        }
+        reply_envelope(&self.local_edge_id, envelope.correlation_id, payload)
+    }
+}
+
+/// Builds a response envelope that echoes the request's correlation id.
+pub fn reply_envelope(
+    local_edge_id: &str,
+    correlation_id: u64,
+    payload: Option<control_envelope::Payload>,
+) -> ControlEnvelope {
+    ControlEnvelope {
+        from_edge_id: local_edge_id.to_string(),
+        sent_at_ms: now_ms(),
+        correlation_id,
+        payload,
     }
 }
 
@@ -316,7 +328,7 @@ async fn serve_stream<H: ControlHandler>(
         .map_err(|e| format!("read: {e}"))?;
     let envelope = ControlEnvelope::decode(raw.as_slice()).map_err(|e| format!("decode: {e}"))?;
 
-    let reply = handler.handle(envelope);
+    let reply = handler.handle(envelope).await;
     let bytes = reply.encode_to_vec();
 
     send.write_all(&bytes).await.map_err(|e| format!("write: {e}"))?;
