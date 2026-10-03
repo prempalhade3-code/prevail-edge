@@ -1,8 +1,15 @@
-use crate::types::PredictionResult;
+use crate::types::{PredictionResult, TrajectorySample};
 use reqwest::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Client for Atharva's predictor service. Falls back to mock when unavailable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictOutcome {
+    Live,
+    Degraded,
+}
+
+/// Client for the ML predictor service. Surfaces outages explicitly instead of
+/// silently substituting mock probabilities.
 pub struct PredictorClient {
     http: Client,
     base_url: String,
@@ -16,36 +23,56 @@ impl PredictorClient {
         }
     }
 
-    pub async fn predict(&self, session_id: &str) -> PredictionResult {
+    pub async fn post_trajectory(&self, sample: &TrajectorySample) {
+        let url = format!("{}/trajectory", self.base_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "session_id": sample.session_id,
+            "edge_id": sample.edge_id,
+            "timestamp_ms": sample.timestamp_ms,
+            "latitude": sample.latitude,
+            "longitude": sample.longitude,
+            "speed_mps": sample.speed_mps,
+        });
+        let _ = self.http.post(&url).json(&body).send().await;
+    }
+
+    pub async fn predict(&self, session_id: &str, current_edge: &str) -> (PredictionResult, PredictOutcome) {
         let url = format!("{}/predict", self.base_url.trim_end_matches('/'));
-        let body = serde_json::json!({ "session_id": session_id });
+        let body = serde_json::json!({
+            "session_id": session_id,
+            "current_edge": current_edge,
+        });
         match self.http.post(&url).json(&body).send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(p) = resp.json::<PredictionResult>().await {
-                    return p;
+                    return (p, PredictOutcome::Live);
                 }
             }
-            _ => {}
+            Ok(resp) => {
+                tracing::warn!("predictor returned HTTP {}", resp.status());
+            }
+            Err(e) => {
+                tracing::warn!("predictor unreachable: {e}");
+            }
         }
-        mock_prediction(session_id)
+        (degraded_prediction(session_id), PredictOutcome::Degraded)
     }
 }
 
-/// Contract-compatible mock until `python/predictor` is deployed (Atharva).
-pub fn mock_prediction(session_id: &str) -> PredictionResult {
+pub fn degraded_prediction(session_id: &str) -> PredictionResult {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
     let mut probabilities = std::collections::HashMap::new();
-    probabilities.insert("edge-b".into(), 0.82);
-    probabilities.insert("edge-c".into(), 0.13);
-    probabilities.insert("edge-d".into(), 0.05);
+    for edge in ["edge-a", "edge-b", "edge-c", "edge-d"] {
+        probabilities.insert(edge.into(), 0.25);
+    }
     PredictionResult {
         session_id: session_id.to_string(),
-        model_version: "mock-v0".into(),
+        model_version: "degraded-unavailable".into(),
         probabilities,
-        eta_sec: Some(14.0),
+        eta_sec: None,
         computed_at_ms: now,
     }
 }
