@@ -1,4 +1,4 @@
-use crate::proto::control_envelope;
+use crate::proto::{control_envelope, ControlEnvelope};
 use crate::quic::{MeshAddressBook, QuicControlClient, QuicError};
 use crate::types::{PeerPing, PeerPong};
 use async_trait::async_trait;
@@ -22,6 +22,14 @@ pub enum TransportError {
 #[async_trait]
 pub trait ControlTransport: Send + Sync {
     async fn send_ping(&self, ping: PeerPing) -> Result<PeerPong, TransportError>;
+
+    /// Sends one control message to a peer and returns its reply.
+    async fn request(
+        &self,
+        peer_edge_id: &str,
+        payload: control_envelope::Payload,
+    ) -> Result<ControlEnvelope, TransportError>;
+
     fn peers(&self) -> Vec<String>;
 
     /// Reported to the dashboard so a degraded mesh is visible rather than silent.
@@ -54,6 +62,36 @@ impl ControlTransport for InMemoryTransport {
             edge_id: self.local_edge.clone(),
             received_at_ms: ping.sent_at_ms,
         })
+    }
+
+    /// Only `PeerPing` is modelled. Anything else reports the peer as
+    /// unreachable rather than inventing an acknowledgement, so a runtime left
+    /// on this transport cannot appear to be coordinating a mesh it is not on.
+    async fn request(
+        &self,
+        peer_edge_id: &str,
+        payload: control_envelope::Payload,
+    ) -> Result<ControlEnvelope, TransportError> {
+        match payload {
+            control_envelope::Payload::PeerPing(ping) => {
+                let pong = self
+                    .send_ping(PeerPing {
+                        edge_id: ping.edge_id,
+                        sent_at_ms: ping.sent_at_ms,
+                    })
+                    .await?;
+                Ok(ControlEnvelope {
+                    from_edge_id: self.local_edge.clone(),
+                    sent_at_ms: pong.received_at_ms,
+                    correlation_id: 0,
+                    payload: Some(control_envelope::Payload::PeerPong(crate::proto::PeerPong {
+                        edge_id: pong.edge_id,
+                        received_at_ms: pong.received_at_ms,
+                    })),
+                })
+            }
+            _ => Err(TransportError::Unreachable(peer_edge_id.to_string())),
+        }
     }
 
     fn peers(&self) -> Vec<String> {
@@ -117,6 +155,14 @@ impl ControlTransport for QuicTransport {
                 detail: format!("{other:?}"),
             }),
         }
+    }
+
+    async fn request(
+        &self,
+        peer_edge_id: &str,
+        payload: control_envelope::Payload,
+    ) -> Result<ControlEnvelope, TransportError> {
+        Ok(self.client.request(peer_edge_id, payload).await?)
     }
 
     fn peers(&self) -> Vec<String> {
