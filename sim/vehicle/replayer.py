@@ -13,6 +13,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from python.mobility.region_mapper import RegionMapper
+from python.mobility.session_config import get_session_id
 
 
 DETERMINISTIC_WAYPOINTS: List[Dict[str, Any]] = [
@@ -25,10 +26,11 @@ DETERMINISTIC_WAYPOINTS: List[Dict[str, Any]] = [
 
 
 def generate_trace_samples(
-    session_id: str = "sim-vehicle-01",
+    session_id: Optional[str] = None,
     config_path: str = None,
 ) -> List[Dict[str, Any]]:
     """Generates the contract-valid deterministic trajectory trace A -> A -> B -> B -> C."""
+    session_id = session_id or get_session_id()
     mapper = RegionMapper(config_path=config_path)
     samples = []
     base_time_ms = int(time.time() * 1000)
@@ -72,7 +74,7 @@ def run_replayer(
 ):
     """Runs the replayer emitting JSON lines to stdout / log and optional file."""
     mapper = RegionMapper()
-    session_id = "sim-vehicle-01"
+    session_id = get_session_id()
     last_edge_id = None
     step_count = 0
 
