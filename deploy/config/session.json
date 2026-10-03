@@ -1,0 +1,6 @@
+{
+  "session_id": "sim-vehicle-01",
+  "run_id": "run-demo-1",
+  "bootstrap_edge_id": "edge-a",
+  "authority_secret": "lab-secret"
+}

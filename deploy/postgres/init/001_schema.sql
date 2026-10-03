@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 CREATE INDEX IF NOT EXISTS idx_timeline_events_run_id ON timeline_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_timeline_events_type ON timeline_events(event_type);
 
+-- Prevent duplicate timeline rows on backend restart / resync.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_timeline_events_dedupe
+    ON timeline_events(run_id, timestamp_ms, event_type, message);
+
 CREATE TABLE IF NOT EXISTS metric_samples (
     id SERIAL PRIMARY KEY,
     run_id VARCHAR(64) NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,

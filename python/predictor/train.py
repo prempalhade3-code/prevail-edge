@@ -3,7 +3,7 @@
 import argparse
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
@@ -48,6 +48,35 @@ def evaluate_accuracy(
     top1_acc = (correct_top1 / total) if total > 0 else 0.0
     top2_acc = (correct_top2 / total) if total > 0 else 0.0
     return {"top1_accuracy": top1_acc, "top2_accuracy": top2_acc, "total_samples": total}
+
+
+def evaluate_baseline_accuracy(
+    baseline: DestinationMatrixBaseline,
+    val_loader: DataLoader,
+    idx_to_edge: Dict[int, str],
+    edge_ids: List[str],
+) -> Dict[str, float]:
+    """Top-1 accuracy of the first-order Markov baseline on the same validation split.
+
+    The GRU only justifies its cost if it beats this, so the comparison is
+    reported alongside every training run rather than assumed.
+    """
+    correct = 0
+    total = 0
+
+    for x_batch, y_batch in val_loader:
+        for row, target in zip(x_batch.tolist(), y_batch.tolist()):
+            tokens = [t for t in row if t != 0]
+            last_edge = idx_to_edge.get(tokens[-1]) if tokens else None
+            probs = baseline.predict_proba(last_edge)
+            if not probs:
+                continue
+            predicted = max(probs.items(), key=lambda kv: kv[1])[0]
+            if predicted == edge_ids[target]:
+                correct += 1
+            total += 1
+
+    return {"top1_accuracy": (correct / total) if total else 0.0, "total_samples": total}
 
 
 def train_pipeline(
@@ -138,15 +167,22 @@ def train_pipeline(
                 f"Val Top-2 Acc: {metrics['top2_accuracy'] * 100:.2f}%"
             )
 
-    # 5. Final Offline Evaluation Report
+    # 5. Final Offline Evaluation Report, against the Markov baseline
     final_metrics = evaluate_accuracy(model, val_loader, device)
+    baseline_metrics = evaluate_baseline_accuracy(baseline, val_loader, idx_to_edge, edge_ids)
+    uplift = final_metrics["top1_accuracy"] - baseline_metrics["top1_accuracy"]
+    final_metrics["baseline_top1_accuracy"] = baseline_metrics["top1_accuracy"]
+    final_metrics["gru_uplift_over_baseline"] = uplift
+
     print("\n" + "=" * 50)
     print("      OFFLINE ACCURACY EVALUATION REPORT")
     print("=" * 50)
     print(f"Model Architecture:   EdgePredictorGRU (Embed=16, Hidden=32, 1-Layer)")
     print(f"Total Validation Set: {final_metrics['total_samples']} samples")
-    print(f"Top-1 Accuracy:       {final_metrics['top1_accuracy'] * 100:.2f}%")
-    print(f"Top-2 Accuracy:       {final_metrics['top2_accuracy'] * 100:.2f}%")
+    print(f"GRU Top-1 Accuracy:   {final_metrics['top1_accuracy'] * 100:.2f}%")
+    print(f"GRU Top-2 Accuracy:   {final_metrics['top2_accuracy'] * 100:.2f}%")
+    print(f"Markov Top-1 Baseline:{baseline_metrics['top1_accuracy'] * 100:>7.2f}%")
+    print(f"GRU uplift:           {uplift * 100:+.2f} pp")
     print("=" * 50)
 
     # 6. Model Export (TorchScript < 1MB)

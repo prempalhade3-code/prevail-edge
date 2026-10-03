@@ -7,40 +7,96 @@ from torch.utils.data import Dataset
 
 
 class SyntheticTrajectoryGenerator:
-    """Generates synthetic edge sequence trajectories based on edge spatial adjacency."""
+    """Generates route-coherent synthetic edge sequences for next-edge training.
 
-    def __init__(self, edge_ids: Optional[List[str]] = None, seed: int = 42):
+    Real vehicles do not random-walk the edge graph: they traverse corridors
+    toward a destination, so the next edge depends on *where the trip started*,
+    not only on the current edge. Sampling from named route archetypes
+    reproduces that higher-order structure, which is what makes the GRU
+    meaningfully better than the first-order destination-matrix baseline.
+
+    A memoryless walk over the adjacency graph would cap top-1 accuracy near
+    chance and make the GRU-versus-Markov comparison vacuous.
+    """
+
+    # Commuter archetypes over the Bangalore corridor topology:
+    # edge-a Central, edge-b East, edge-c South-East, edge-d North-West.
+    DEFAULT_ROUTES: List[Tuple[List[str], float]] = [
+        (["edge-d", "edge-a", "edge-b"], 0.22),            # NW residential -> centre -> east offices
+        (["edge-d", "edge-a", "edge-b", "edge-c"], 0.16),  # same, continuing onto the south highway
+        (["edge-b", "edge-a", "edge-d"], 0.20),            # evening return
+        (["edge-c", "edge-b", "edge-a"], 0.14),            # south-east inbound
+        (["edge-a", "edge-b", "edge-c"], 0.12),            # cross-town along MG Road then highway
+        (["edge-c", "edge-a", "edge-d"], 0.08),            # diagonal transit
+        (["edge-a", "edge-b", "edge-a"], 0.08),            # local out-and-back
+    ]
+
+    def __init__(
+        self,
+        edge_ids: Optional[List[str]] = None,
+        seed: int = 42,
+        deviation_prob: float = 0.08,
+        dwell_prob: float = 0.18,
+    ):
         self.edge_ids = edge_ids or ["edge-a", "edge-b", "edge-c", "edge-d"]
         self.random = random.Random(seed)
+        self.deviation_prob = deviation_prob
+        self.dwell_prob = dwell_prob
 
-        # Adjacency transition graph modeling typical urban routes
-        # edge-a (Central) connects to all: B (East), C (South-East), D (North-West)
-        # edge-b connects to A, C
-        # edge-c connects to A, B
-        # edge-d connects to A
+        # Adjacency still constrains deviations to geographically plausible moves.
         self.transition_graph: Dict[str, List[str]] = {
-            "edge-a": ["edge-b", "edge-c", "edge-d", "edge-b", "edge-a"],
-            "edge-b": ["edge-a", "edge-c", "edge-b"],
-            "edge-c": ["edge-a", "edge-b", "edge-c"],
-            "edge-d": ["edge-a", "edge-d"],
+            "edge-a": ["edge-b", "edge-c", "edge-d"],
+            "edge-b": ["edge-a", "edge-c"],
+            "edge-c": ["edge-a", "edge-b"],
+            "edge-d": ["edge-a"],
         }
-        # Fallback for any unknown nodes
         for e in self.edge_ids:
             if e not in self.transition_graph:
                 self.transition_graph[e] = [x for x in self.edge_ids if x != e] or [e]
 
-    def generate_trajectory(self, min_len: int = 4, max_len: int = 12) -> List[str]:
-        """Generates a single synthetic trajectory sequence of edge IDs."""
-        length = self.random.randint(min_len, max_len)
-        current = self.random.choice(self.edge_ids)
-        trajectory = [current]
+        known = set(self.edge_ids)
+        self.routes = [
+            (route, weight)
+            for route, weight in self.DEFAULT_ROUTES
+            if all(step in known for step in route)
+        ]
+        if not self.routes:
+            self.routes = [([e for e in self.edge_ids], 1.0)]
 
-        for _ in range(length - 1):
-            next_candidates = self.transition_graph.get(current, self.edge_ids)
-            current = self.random.choice(next_candidates)
+    def _pick_route(self) -> List[str]:
+        routes = [r for r, _ in self.routes]
+        weights = [w for _, w in self.routes]
+        return self.random.choices(routes, weights=weights, k=1)[0]
+
+    def generate_trajectory(self, min_len: int = 4, max_len: int = 12) -> List[str]:
+        """Generates one route-coherent trajectory, with dwells and occasional detours."""
+        route = self._pick_route()
+        # Start partway along the route sometimes, so prefixes are not all trip starts.
+        start = self.random.randrange(len(route))
+        target_len = self.random.randint(min_len, max_len)
+
+        trajectory: List[str] = []
+        cursor = start
+
+        while len(trajectory) < target_len:
+            current = route[cursor % len(route)]
             trajectory.append(current)
 
-        return trajectory
+            # Dwell: the vehicle lingers in an edge before moving on.
+            if self.random.random() < self.dwell_prob and len(trajectory) < target_len:
+                trajectory.append(current)
+
+            if self.random.random() < self.deviation_prob:
+                # Detour to an adjacent edge, then rejoin the route.
+                candidates = [
+                    e for e in self.transition_graph.get(current, self.edge_ids) if e != current
+                ]
+                if candidates and len(trajectory) < target_len:
+                    trajectory.append(self.random.choice(candidates))
+
+            cursor += 1
+
+        return trajectory[:target_len]
 
     def generate_dataset(
         self, num_sequences: int = 1000, min_len: int = 4, max_len: int = 12

@@ -3,16 +3,16 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from .aggregator import EdgeAggregator
 from .config import settings
-from .runtime_client import RuntimeClient
 from .sim_client import sim_status
 from .timeline_store import TimelineStore
 
-runtime = RuntimeClient()
+runtime = EdgeAggregator()
 timeline_store = TimelineStore(settings.database_url)
 
 
@@ -100,17 +100,22 @@ async def events():
 
 @app.get("/v1/metrics")
 async def metrics():
-    return await runtime.get("/v1/metrics")
+    return await runtime.metrics()
 
 
 @app.post("/v1/demo/advance")
 async def advance_demo():
-    return await runtime.advance_demo()
+    return await runtime.post("/v1/demo/advance")
 
 
 @app.post("/v1/trajectory")
 async def ingest_trajectory(sample: dict):
     return await runtime.ingest_trajectory(sample)
+
+
+@app.post("/v1/traffic")
+async def ingest_traffic(vehicles: list = Body(...)):
+    return await runtime.post("/v1/traffic", vehicles)
 
 
 @app.get("/v1/sim/status")
@@ -148,25 +153,17 @@ async def ws_sim_engine(websocket: WebSocket):
 
 @app.websocket("/ws/live")
 async def ws_live(websocket: WebSocket):
-    """Proxy live snapshots from Rust runtime WebSocket (fallback: poll snapshot)."""
+    """Merged multi-edge snapshot stream for the dashboard."""
     await websocket.accept()
-    runtime_ws = settings.runtime_url.replace("http", "ws", 1) + "/ws/live"
-    try:
-        import websockets
-
-        async with websockets.connect(runtime_ws) as upstream:
-            async for message in upstream:
-                await websocket.send_text(message)
-    except WebSocketDisconnect:
-        return
-    except Exception:
-        while True:
-            try:
-                snap = await runtime.snapshot()
-                await websocket.send_text(json.dumps(snap))
-                await asyncio.sleep(0.8)
-            except WebSocketDisconnect:
-                break
+    while True:
+        try:
+            snap = await runtime.snapshot()
+            await websocket.send_text(json.dumps(snap))
+            await asyncio.sleep(0.2)
+        except WebSocketDisconnect:
+            break
+        except Exception:
+            await asyncio.sleep(1.0)
 
 
 # Serve built dashboard from backend when frontend/dist exists (skip Vite dev server).

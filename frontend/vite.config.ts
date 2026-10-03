@@ -3,13 +3,10 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  optimizeDeps: {
-    include: ["maplibre-gl", "react-map-gl"],
-  },
   build: {
     minify: "esbuild",
     reportCompressedSize: false,
-    chunkSizeWarningLimit: 3000,
+    chunkSizeWarningLimit: 4000,
   },
   server: {
     host: "127.0.0.1",
@@ -19,6 +16,7 @@ export default defineConfig({
       "/v1": "http://127.0.0.1:8000",
       "/ws": { target: "ws://127.0.0.1:8000", ws: true },
       "/health": "http://127.0.0.1:8000",
+      "/sim": { target: "http://127.0.0.1:8000", bypass: () => undefined },
     },
   },
   preview: {

@@ -20,6 +20,9 @@ try:
 except ImportError:
     yaml = None  # type: ignore
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from python.mobility.session_config import get_session_id  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "experiments" / "results"
@@ -51,7 +54,7 @@ def load_scenario(path: Path) -> Scenario:
         id=raw["id"],
         description=raw.get("description", ""),
         stream_file=stream,
-        session_id=raw.get("session_id", "sim-vehicle-01"),
+        session_id=raw.get("session_id") or get_session_id(),
         mode=raw.get("mode", "prevail"),
         repeats=int(raw.get("repeats", 1)),
         expected_handoffs=raw.get("expected_handoffs", []),
@@ -163,10 +166,10 @@ def persist_to_postgres(run_id: str, scenario: Scenario, metrics: Dict[str, floa
             for name, value in metrics.items():
                 cur.execute(
                     """
-                    INSERT INTO metric_samples (run_id, metric_name, value, timestamp_ms)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO metric_samples (run_id, metric_name, value, edge_id, timestamp_ms, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                     """,
-                    (run_id, name, value, ts),
+                    (run_id, name, value, scenario.id, ts, json.dumps({"mode": scenario.mode})),
                 )
         conn.commit()
     finally:

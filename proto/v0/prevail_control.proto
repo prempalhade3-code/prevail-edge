@@ -125,3 +125,43 @@ message PeerPong {
   string edge_id = 1;
   int64 received_at_ms = 2;
 }
+
+message ShadowCreateAck {
+  string session_id = 1;
+  string target_edge_id = 2;
+  bool accepted = 3;
+  string reason = 4;
+}
+
+// Authoritative → warm shadow stream tee (ADR-003 record lag ratio).
+message StateReplicate {
+  string session_id = 1;
+  uint64 sequence = 2;
+  TrajectorySample sample = 3;
+}
+
+// Self-describing wrapper for every control-plane message on the QUIC mesh.
+// Each request/response pair uses one bidirectional stream, so QUIC gives us
+// framing and the envelope gives us the type: a parallel numeric tag registry
+// would be free to drift out of sync with this schema.
+message ControlEnvelope {
+  string from_edge_id = 1;
+  int64 sent_at_ms = 2;
+  // Echoed back on the response so a caller can match it to its request.
+  uint64 correlation_id = 3;
+
+  oneof payload {
+    PeerPing peer_ping = 10;
+    PeerPong peer_pong = 11;
+    ShadowCreate shadow_create = 12;
+    ShadowCreateAck shadow_create_ack = 13;
+    ShadowRelease shadow_release = 14;
+    ShadowSyncStatus shadow_sync_status = 15;
+    PromotionRequest promotion_request = 16;
+    PromotionAck promotion_ack = 17;
+    AuthorityTransfer authority_transfer = 18;
+    DemotionNotice demotion_notice = 19;
+    EdgeCapabilityAdvertisement capability_advertisement = 20;
+    StateReplicate state_replicate = 21;
+  }
+}

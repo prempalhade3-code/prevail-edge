@@ -1,12 +1,17 @@
 package dev.prevail.job;
 
 import org.apache.flink.api.common.JobExecutionResult;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
+import java.time.Duration;
+
 /**
- * PREVAIL stream job — reads JSONL trajectory file, keyed aggregation, sidecar gating.
+ * PREVAIL stream job — reads JSONL file or live socket, keyed aggregation, sidecar gating.
  */
 public class PrevailStreamJob {
 
@@ -16,8 +21,25 @@ public class PrevailStreamJob {
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1);
+        env.enableCheckpointing(5000);
+        env.getCheckpointConfig().setExternalizedCheckpointCleanup(
+                CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
-        DataStream<String> lines = env.readTextFile(streamPath);
+        DataStream<String> lines;
+        if (streamPath.startsWith("socket://")) {
+            String hostPort = streamPath.substring("socket://".length());
+            int colon = hostPort.lastIndexOf(':');
+            String host = hostPort.substring(0, colon);
+            int port = Integer.parseInt(hostPort.substring(colon + 1));
+            lines = env.socketTextStream(host, port, "\n", 0);
+        } else {
+            lines = env.readTextFile(streamPath);
+        }
+
+        WatermarkStrategy<TrajectorySample> watermarks = WatermarkStrategy
+                .<TrajectorySample>forBoundedOutOfOrderness(Duration.ofSeconds(2))
+                .withTimestampAssigner((SerializableTimestampAssigner<TrajectorySample>) (sample, ts) ->
+                        sample.timestampMs);
 
         DataStream<TrajectorySample> samples = lines
                 .filter(line -> line != null && !line.trim().isEmpty())
@@ -26,7 +48,8 @@ public class PrevailStreamJob {
                     public TrajectorySample map(String line) throws Exception {
                         return TrajectoryParser.parseLine(line);
                     }
-                });
+                })
+                .assignTimestampsAndWatermarks(watermarks);
 
         samples
                 .keyBy(s -> s.sessionId)

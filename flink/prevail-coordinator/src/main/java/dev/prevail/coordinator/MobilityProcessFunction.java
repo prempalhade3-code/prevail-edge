@@ -9,16 +9,18 @@ import org.apache.flink.util.Collector;
  */
 public class MobilityProcessFunction extends ProcessFunction<String, String> {
     private transient SidecarClient sidecar;
+    private transient String sessionId;
 
     @Override
     public void open(org.apache.flink.configuration.Configuration parameters) {
         String sidecarUrl = System.getenv().getOrDefault("PREVAIL_SIDECAR_URL", "http://127.0.0.1:8090");
         sidecar = new SidecarClient(sidecarUrl);
+        sessionId = SessionConfig.load().sessionId();
     }
 
     @Override
     public void processElement(String value, Context ctx, Collector<String> out) throws Exception {
-        SidecarClient.AuthorityState auth = sidecar.getAuthority("session-vehicle-1");
+        SidecarClient.AuthorityState auth = sidecar.getAuthority(sessionId);
         if (auth.outputEnabled()) {
             out.collect(value);
         }

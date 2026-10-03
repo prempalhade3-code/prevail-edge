@@ -25,6 +25,16 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
+async-trait = "0.1"
+bytes = "1"
+prost = "0.13"
+quinn = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+rcgen = "0.13"
+
+[build-dependencies]
+prost-build = "0.13"
 
 [dev-dependencies]
 tokio-test = "0.4"

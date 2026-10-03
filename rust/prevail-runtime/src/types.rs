@@ -107,10 +107,14 @@ pub struct SystemSnapshot {
     pub vehicle_longitude: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vehicle_heading: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vehicle_speed_mps: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vehicle_trail: Vec<VehicleTrailPoint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traffic_vehicles: Vec<TrafficVehicle>,
+    #[serde(default)]
+    pub predictor_degraded: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,7 +146,7 @@ impl Default for SpeculationConfig {
     fn default() -> Self {
         Self {
             max_shadows: 1,
-            min_confidence: 0.60,
+            min_confidence: 0.30,
             promotion_sync_threshold: 0.95,
             promotion_margin_sec: 2.0,
             estimated_sync_sec: 5.0,
