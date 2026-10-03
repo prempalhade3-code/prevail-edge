@@ -123,6 +123,31 @@ class EdgeAggregator:
         merged["topology"] = list(merged_topology.values())
         merged["timeline"] = timeline
         merged["edge_snapshots"] = {eid: {"reachable": True} for eid in snapshots}
+
+        # Vehicle pose must come from the freshest report, not whichever edge
+        # happened to be chosen as primary — a stale authority snapshot yanks
+        # the car backwards in the 3D view.
+        freshest = None
+        freshest_ts = -1
+        for snap in snapshots.values():
+            if snap.get("vehicle_latitude") is None:
+                continue
+            ts = int(snap.get("vehicle_updated_ms") or 0)
+            if ts >= freshest_ts:
+                freshest_ts = ts
+                freshest = snap
+        if freshest is not None:
+            for key in (
+                "vehicle_latitude",
+                "vehicle_longitude",
+                "vehicle_heading",
+                "vehicle_speed_mps",
+                "vehicle_updated_ms",
+                "vehicle_trail",
+                "traffic_vehicles",
+            ):
+                if key in freshest:
+                    merged[key] = freshest[key]
         return merged
 
     async def snapshot(self) -> dict[str, Any]:

@@ -10,14 +10,12 @@
  */
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Text } from "@react-three/drei";
 import {
   AdditiveBlending,
   DoubleSide,
   type Group,
   type Mesh,
   type MeshStandardMaterial,
-  Vector3,
 } from "three";
 import type { EdgeRegionGeo } from "../../lib/cityScene";
 import type { Pose, PrevailView } from "../../lib/liveStore";
@@ -83,35 +81,45 @@ function Gate({
   gate: [number, number];
   view: React.MutableRefObject<PrevailView>;
 }) {
-  const root = useRef<Group>(null);
   const wash = useRef<MeshStandardMaterial>(null);
   const sync = useRef<Mesh>(null);
-  const label = useRef<Group>(null);
-  const roleRef = useRef<EdgeRole>("idle");
+  const lamp = useRef<MeshStandardMaterial>(null);
 
-  useFrame(({ camera }) => {
-    const role = roleOf(view.current, region.edge_id);
-    roleRef.current = role;
-    const colour = ROLE_COLOR[role];
+  useFrame(() => {
+    const r = roleOf(view.current, region.edge_id);
+    const colour = ROLE_COLOR[r];
     if (wash.current) {
       wash.current.color.set(colour);
-      wash.current.opacity = role === "authoritative" ? 0.1 : role === "idle" ? 0.02 : 0.07;
+      wash.current.opacity = r === "authoritative" ? 0.1 : r === "idle" ? 0.02 : 0.07;
+    }
+    if (lamp.current) {
+      lamp.current.color.set(colour);
+      lamp.current.emissive.set(colour);
     }
     if (sync.current) {
       const ratio = syncRatioOf(view.current, region.edge_id);
-      const showing = role === "shadow";
+      const showing = r === "shadow";
       sync.current.visible = showing;
       if (showing) {
         sync.current.scale.y = Math.max(0.04, ratio);
         sync.current.position.y = 0.2 + ratio * 1.6;
       }
     }
-    if (label.current) label.current.quaternion.copy(camera.quaternion);
   });
 
   return (
-    <group ref={root} position={[gate[0], 0, gate[1]]}>
+    <group position={[gate[0], 0, gate[1]]}>
       <RoadsideCabinet role="idle" />
+      <mesh position={[0, 11.7, 0]}>
+        <sphereGeometry args={[0.28, 10, 8]} />
+        <meshStandardMaterial
+          ref={lamp}
+          color={ROLE_COLOR.idle}
+          emissive={ROLE_COLOR.idle}
+          emissiveIntensity={2.4}
+          toneMapped={false}
+        />
+      </mesh>
       <mesh ref={sync} position={[-1.3, 0.2, 0]} visible={false}>
         <boxGeometry args={[0.18, 3.2, 0.18]} />
         <meshStandardMaterial
@@ -122,7 +130,7 @@ function Gate({
         />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <circleGeometry args={[28, 48]} />
+        <circleGeometry args={[22, 24]} />
         <meshStandardMaterial
           ref={wash}
           transparent
@@ -131,53 +139,7 @@ function Gate({
           toneMapped={false}
         />
       </mesh>
-      <group ref={label} position={[0, 13.4, 0]}>
-        <Text fontSize={1.6} color="#f4f7fb" anchorX="center" outlineWidth={0.06} outlineColor="#081018">
-          {region.edge_id.toUpperCase()}
-        </Text>
-        <GateStatus region={region} view={view} />
-      </group>
     </group>
-  );
-}
-
-function GateStatus({
-  region,
-  view,
-}: {
-  region: EdgeRegionGeo;
-  view: React.MutableRefObject<PrevailView>;
-}) {
-  const last = useRef("");
-  const textRef = useRef<{ text: string } | null>(null);
-  useFrame(() => {
-    const role = roleOf(view.current, region.edge_id);
-    const sync = syncRatioOf(view.current, region.edge_id);
-    const next =
-      role === "shadow"
-        ? `SHADOW  ${(sync * 100).toFixed(0)}%`
-        : role === "authoritative"
-          ? "AUTHORITY"
-          : role === "predicted"
-            ? "PREDICTED NEXT"
-            : "STANDBY";
-    if (next !== last.current && textRef.current) {
-      last.current = next;
-      textRef.current.text = next;
-    }
-  });
-  return (
-    <Text
-      ref={textRef as never}
-      position={[0, -1.7, 0]}
-      fontSize={0.95}
-      color="#c5d4e4"
-      anchorX="center"
-      outlineWidth={0.05}
-      outlineColor="#081018"
-    >
-      STANDBY
-    </Text>
   );
 }
 
@@ -200,7 +162,7 @@ function Coverage({
   });
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[region.x, 0.08, region.z]}>
-      <ringGeometry args={[region.coverage_radius_m - 8, region.coverage_radius_m, 96]} />
+      <ringGeometry args={[region.coverage_radius_m - 8, region.coverage_radius_m, 48]} />
       <meshStandardMaterial
         ref={ring}
         transparent

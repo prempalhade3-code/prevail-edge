@@ -59,6 +59,14 @@ experiments/results/
 *.sql.backup
 pgdata/
 
+# Unreal Engine
+unreal/**/Binaries/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/DerivedDataCache/
+unreal/**/*.xcworkspace
+unreal/**/*.xcodeproj
+
 # Editor
 .vscode/
 !.vscode/extensions.json

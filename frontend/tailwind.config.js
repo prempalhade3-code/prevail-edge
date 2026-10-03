@@ -3,13 +3,17 @@ export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Outfit", "Inter", "system-ui", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
+      },
       colors: {
         prevail: {
-          bg: "#0b1220",
+          bg: "#09090b",
           panel: "#111827",
-          accent: "#3b82f6",
+          accent: "#38bdf8",
           warm: "#f59e0b",
-          ok: "#10b981",
+          ok: "#34d399",
         },
       },
     },

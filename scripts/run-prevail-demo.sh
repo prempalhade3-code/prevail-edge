@@ -35,7 +35,9 @@ if [[ ! -f "$JAR" ]]; then
   (cd "$ROOT/flink/prevail-job" && mvn -q package -Pstandalone -DskipTests)
 fi
 
-if [[ ! -d "$ROOT/frontend/dist" ]] || [[ "$ROOT/frontend/src/App.tsx" -nt "$ROOT/frontend/dist/index.html" ]]; then
+if [[ ! -d "$ROOT/frontend/dist" ]] \
+  || [[ "$ROOT/frontend/src/App.tsx" -nt "$ROOT/frontend/dist/index.html" ]] \
+  || [[ "$ROOT/frontend/src/components/ComparisonCharts.tsx" -nt "$ROOT/frontend/dist/index.html" ]]; then
   log "Building dashboard…"
   "$ROOT/scripts/build-ui.sh"
 fi
@@ -88,11 +90,21 @@ if docker info >/dev/null 2>&1; then
   done
 fi
 POSTGRES_DSN="postgresql://prevail:prevail_password@127.0.0.1:5432/prevail"
+SQLITE_DSN="sqlite:///$ROOT/experiments/prevail-timeline.db"
+if docker exec prevail-postgres pg_isready -U prevail -d prevail >/dev/null 2>&1; then
+  DEFAULT_DB="$POSTGRES_DSN"
+  log "Using Postgres for timeline persistence"
+else
+  DEFAULT_DB="$SQLITE_DSN"
+  log "Postgres unavailable — using SQLite $ROOT/experiments/prevail-timeline.db"
+fi
+export PREVAIL_EDGE_URLS="$EDGE_HTTP"
+export PREVAIL_SIDECAR_URL="${PREVAIL_SIDECAR_URL:-http://127.0.0.1:8090}"
 
 log "Starting backend…"
 cd "$ROOT/backend"
-PREVAIL_EDGE_URLS="$EDGE_HTTP" PREVAIL_BOOTSTRAP_EDGE_ID=edge-a \
-  PREVAIL_DATABASE_URL="${PREVAIL_DATABASE_URL:-$POSTGRES_DSN}" \
+PREVAIL_BOOTSTRAP_EDGE_ID=edge-a \
+  PREVAIL_DATABASE_URL="${PREVAIL_DATABASE_URL:-$DEFAULT_DB}" \
   "$ROOT/backend/.venv/bin/python" -m prevail_backend.main &
 PIDS+=("$!")
 wait_http "http://127.0.0.1:8000/health" "backend" 20 || true
@@ -101,10 +113,12 @@ wait_http "http://127.0.0.1:8000/health" "backend" 20 || true
 if [[ -f "$JAR" ]]; then
   log "Starting Flink live tap on port ${FLINK_TAP_PORT}"
   if [[ -n "${FLINK_HOME:-}" && -x "${FLINK_HOME}/bin/flink" ]]; then
-    "${FLINK_HOME}/bin/flink" run -c dev.prevail.job.PrevailStreamJob "$JAR" \
+    PREVAIL_EDGE_URLS="$EDGE_HTTP" PREVAIL_SIDECAR_URL="$PREVAIL_SIDECAR_URL" \
+      "${FLINK_HOME}/bin/flink" run -c dev.prevail.job.PrevailStreamJob "$JAR" \
       --stream "socket://127.0.0.1:${FLINK_TAP_PORT}" --mode prevail &
   else
-    java -jar "$JAR" --stream "socket://127.0.0.1:${FLINK_TAP_PORT}" --mode prevail &
+    PREVAIL_EDGE_URLS="$EDGE_HTTP" PREVAIL_SIDECAR_URL="$PREVAIL_SIDECAR_URL" \
+      java -jar "$JAR" --stream "socket://127.0.0.1:${FLINK_TAP_PORT}" --mode prevail &
   fi
   PIDS+=("$!")
   sleep 3

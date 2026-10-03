@@ -98,10 +98,20 @@ def train_pipeline(
     print(f"=== Starting PREVAIL Predictor Training Pipeline ===")
     print(f"Edge Label Space ({num_edges} nodes): {edge_ids}")
 
-    # 1. Generate / Ingest Trajectory Sequences
+    # 1. Ingest corridor / GPS-labeled sequences, then augment with synthetic.
+    from python.predictor.ingest_gps import sequences_from_jsonl
+
+    sequences: List[List[str]] = []
+    labeled = os.getenv("PREVAIL_TRAIN_SEQUENCES")
+    fixture = Path(__file__).resolve().parents[2] / "sim" / "fixtures" / "sample-trajectory.jsonl"
+    for candidate in [Path(labeled) if labeled else None, fixture]:
+        if candidate and candidate.exists():
+            loaded = sequences_from_jsonl(candidate)
+            sequences.extend(loaded)
+            print(f"Loaded {len(loaded)} labeled sequences from {candidate}")
     generator = SyntheticTrajectoryGenerator(edge_ids=edge_ids)
-    sequences = generator.generate_dataset(num_sequences=num_sequences)
-    print(f"Generated {len(sequences)} trajectory sequences for training and validation.")
+    sequences.extend(generator.generate_dataset(num_sequences=num_sequences))
+    print(f"Training on {len(sequences)} trajectory sequences (labeled + synthetic).")
 
     # 2. Train Destination-Matrix Baseline for benchmarking
     baseline = DestinationMatrixBaseline(edge_ids=edge_ids)
@@ -193,6 +203,12 @@ def train_pipeline(
     export_path = os.path.join(output_dir, "gru_predictor.pt")
     model_cpu = model.cpu()
     model_cpu.export_torchscript(export_path)
+    baseline.save(os.path.join(output_dir, "baseline_matrix.json"))
+    try:
+        model_cpu.export_onnx(os.path.join(output_dir, "gru_predictor.onnx"))
+        print("Exported ONNX model next to TorchScript.")
+    except Exception as exc:
+        print(f"ONNX export skipped: {exc}")
 
     file_size_kb = os.path.getsize(export_path) / 1024.0
     print(f"Successfully exported TorchScript model to: {export_path}")

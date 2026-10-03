@@ -24,9 +24,9 @@ use thiserror::Error;
 /// ALPN identifier so a stray client cannot negotiate against this mesh.
 const ALPN: &[u8] = b"prevail-control-v0";
 
-/// Peers are local processes; a slow handshake means the peer is down, not busy.
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
-const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Peers are local processes; allow sufficient time for TLS handshake under load.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
+const REQUEST_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(Debug, Error)]
 pub enum QuicError {

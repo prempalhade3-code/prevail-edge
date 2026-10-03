@@ -100,6 +100,15 @@ docker run -p 8091:8091 prevail-predictor
 
 ## 5. Running Tests
 
+Label T-Drive / GeoLife / JSONL GPS with the region map, then train:
+
+```bash
+python -m python.predictor.ingest_gps --input path/to/traces.csv \
+  --output python/predictor/models/labeled_sequences.jsonl
+PREVAIL_TRAIN_SEQUENCES=python/predictor/models/labeled_sequences.jsonl \
+  python -m python.predictor.train
+```
+
 ```bash
 pytest python/predictor/tests/ -v
 ```

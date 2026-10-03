@@ -32,7 +32,8 @@ $FLINK_HOME/bin/flink run -c dev.prevail.job.PrevailStreamJob \
 
 ## Sidecar gating
 
-Set `PREVAIL_SIDECAR_URL=http://127.0.0.1:8090` (Rust runtime). When sidecar is unreachable, output is allowed for local file-source testing.
+Set `PREVAIL_SIDECAR_URL` and `PREVAIL_EDGE_URLS=edge-a=http://127.0.0.1:8090,...`.
+The job queries the sidecar for `sample.edgeId`. When the sidecar is unreachable, output is **suppressed** (fail-closed). Handoff latency is measured by the Rust runtime, not by this job.
 
 ## Tests
 

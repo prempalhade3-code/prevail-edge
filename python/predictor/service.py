@@ -3,7 +3,7 @@
 import time
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import torch
@@ -49,9 +49,17 @@ class SessionHistoryStore:
         self.max_history = max_history
         self._history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=self.max_history))
         self._last_speed: Dict[str, float] = {}
+        self._last_gps: Dict[str, Tuple[float, float]] = {}
         self._dwell_samples: Dict[str, int] = defaultdict(int)
 
-    def record_step(self, session_id: str, edge_id: str, speed_mps: Optional[float] = None):
+    def record_step(
+        self,
+        session_id: str,
+        edge_id: str,
+        speed_mps: Optional[float] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ):
         history = self._history[session_id]
         if not history or history[-1] != edge_id:
             history.append(edge_id)
@@ -60,12 +68,17 @@ class SessionHistoryStore:
             self._dwell_samples[session_id] += 1
         if speed_mps is not None:
             self._last_speed[session_id] = speed_mps
+        if latitude is not None and longitude is not None:
+            self._last_gps[session_id] = (latitude, longitude)
 
     def get_history(self, session_id: str) -> List[str]:
         return list(self._history.get(session_id, []))
 
     def get_speed(self, session_id: str) -> Optional[float]:
         return self._last_speed.get(session_id)
+
+    def get_gps(self, session_id: str) -> Optional[Tuple[float, float]]:
+        return self._last_gps.get(session_id)
 
     def get_dwell_samples(self, session_id: str) -> int:
         """Samples observed in the current edge, used to temper the ETA estimate."""
@@ -100,6 +113,13 @@ class PredictorEngine:
         """Attempts to load exported TorchScript model or initializes in-memory GRU/baseline."""
         # 1. Initialize destination matrix baseline as solid fallback
         self.baseline = DestinationMatrixBaseline(edge_ids=self.edge_ids)
+        baseline_path = Path(self.config.model_path).with_name("baseline_matrix.json")
+        if baseline_path.exists():
+            try:
+                self.baseline = DestinationMatrixBaseline.load(str(baseline_path))
+                print(f"Loaded destination-matrix baseline from: {baseline_path}")
+            except Exception as exc:
+                print(f"Warning: failed to load baseline matrix ({exc})")
 
         # 2. Check for exported TorchScript model
         model_file = Path(self.config.model_path)
@@ -108,18 +128,17 @@ class PredictorEngine:
                 self.traced_model = torch.jit.load(str(model_file))
                 self.traced_model.eval()
                 print(f"Loaded TorchScript predictor model from: {model_file}")
-                return
             except Exception as e:
                 print(f"Warning: Failed to load TorchScript model ({e}). Using PyTorch GRU instance.")
 
-        # 3. Fallback: Initialize lightweight PyTorch GRU
-        self.model = EdgePredictorGRU(
-            num_edges=len(self.edge_ids),
-            embedding_dim=16,
-            hidden_dim=32,
-            num_layers=1,
-        )
-        self.model.eval()
+        if self.traced_model is None:
+            self.model = EdgePredictorGRU(
+                num_edges=len(self.edge_ids),
+                embedding_dim=16,
+                hidden_dim=32,
+                num_layers=1,
+            )
+            self.model.eval()
 
     def predict(self, session_id: str, current_edge: Optional[str] = None, history: Optional[List[str]] = None) -> PredictionResponse:
         """Computes next-edge probability distribution for given session_id."""
@@ -177,16 +196,28 @@ class PredictorEngine:
         else:
             probabilities = self.config.get_fallback_probabilities()
 
-        # Simple ETA heuristic based on average urban edge transition (10-15 sec)
+        # Calculate road-network ETA to the top predicted next edge using mobility RegionMapper
         speed = self.session_store.get_speed(session_id) or 12.0
-        # 500m average edge diameter / speed
-        eta_sec = round(max(5.0, 500.0 / max(speed, 1.0)), 2)
+        eta_sec = 15.0
+        if probabilities:
+            top_candidate = max(probabilities.items(), key=lambda x: x[1])[0]
+            current_gps = self.session_store.get_gps(session_id)
+            if current_gps:
+                try:
+                    from python.mobility.eta_estimator import estimate_eta
+                    from python.mobility.region_mapper import RegionMapper
+                    mapper = RegionMapper()
+                    eta_sec = estimate_eta(current_gps, top_candidate, speed_mps=speed, region_mapper=mapper)
+                except Exception:
+                    eta_sec = round(max(5.0, 500.0 / max(speed, 1.0)), 2)
+            else:
+                eta_sec = round(max(5.0, 500.0 / max(speed, 1.0)), 2)
 
         return PredictionResponse(
             session_id=session_id,
             model_version=self.config.model_version,
             probabilities=probabilities,
-            eta_sec=eta_sec,
+            eta_sec=round(float(eta_sec), 2),
             computed_at_ms=now_ms,
         )
 
@@ -232,5 +263,7 @@ def update_trajectory(update: TrajectoryUpdate):
         session_id=update.session_id,
         edge_id=update.edge_id,
         speed_mps=update.speed_mps,
+        latitude=update.latitude,
+        longitude=update.longitude,
     )
     return {"status": "recorded", "session_id": update.session_id}

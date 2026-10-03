@@ -70,6 +70,18 @@ class E2EInvariantTests(unittest.TestCase):
         self.assertIsNotNone(snap.get("vehicle_latitude"))
         self.assertIsNotNone(snap.get("vehicle_longitude"))
 
+    def test_transfers_include_measured_latency(self):
+        snap = _get(f"{self.BACKEND}/v1/snapshot")
+        transfers = [
+            e for e in snap.get("timeline", []) if e.get("event_type") == "AuthorityTransferred"
+        ]
+        if not transfers:
+            self.skipTest("no AuthorityTransferred yet")
+        payload = transfers[-1].get("payload") or {}
+        self.assertIn("latency_ms", payload)
+        self.assertGreaterEqual(float(payload["latency_ms"]), 0)
+        self.assertIn(payload.get("transfer_mode"), {"warm", "reactive"})
+
     def test_warm_shadows_form_after_warmup(self):
         deadline = time.time() + 30
         shadows = []

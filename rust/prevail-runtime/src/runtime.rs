@@ -35,6 +35,7 @@ pub struct PrevailRuntime {
     vehicle_longitude: Option<f64>,
     vehicle_heading: Option<f64>,
     vehicle_speed_mps: Option<f64>,
+    vehicle_updated_ms: Option<i64>,
     /// True when this process is holding a warm shadow for the session.
     is_warm_shadow: bool,
     /// Readiness this process reports as a shadow, measured locally.
@@ -52,6 +53,7 @@ pub struct PrevailRuntime {
     predictor_degraded: bool,
     trajectory_ticks: u64,
     last_sync_emit: HashMap<String, f64>,
+    last_handoff_at_ms: Option<i64>,
 }
 
 impl PrevailRuntime {
@@ -104,6 +106,7 @@ impl PrevailRuntime {
             vehicle_longitude: None,
             vehicle_heading: None,
             vehicle_speed_mps: None,
+            vehicle_updated_ms: None,
             is_warm_shadow: false,
             local_sync_ratio: 0.0,
             sync_lag_records: 0,
@@ -115,6 +118,7 @@ impl PrevailRuntime {
             predictor_degraded: false,
             trajectory_ticks: 0,
             last_sync_emit: HashMap::new(),
+            last_handoff_at_ms: None,
         }
     }
 
@@ -207,9 +211,12 @@ impl PrevailRuntime {
 
         let edge_changed = sample.edge_id != self.edge_id;
         if edge_changed {
+            let started = now_ms();
+            self.last_handoff_at_ms = Some(started);
             let mut payload = HashMap::new();
             payload.insert("from_edge".into(), self.edge_id.clone());
             payload.insert("to_edge".into(), sample.edge_id.clone());
+            payload.insert("started_at_ms".into(), started.to_string());
             self.emit(
                 "HandoffDetected",
                 Some(&sample.edge_id),
@@ -225,6 +232,7 @@ impl PrevailRuntime {
         self.vehicle_longitude = Some(sample.longitude);
         self.vehicle_heading = sample.heading_deg;
         self.vehicle_speed_mps = Some(sample.speed_mps);
+        self.vehicle_updated_ms = Some(now_ms());
         self.vehicle_trail.push(crate::types::VehicleTrailPoint {
             latitude: sample.latitude,
             longitude: sample.longitude,
@@ -233,6 +241,31 @@ impl PrevailRuntime {
             let drain = self.vehicle_trail.len() - 120;
             self.vehicle_trail.drain(0..drain);
         }
+    }
+
+    fn top_predicted_edge(&self) -> Option<String> {
+        let pred = self.prediction.as_ref()?;
+        pred.probabilities
+            .iter()
+            .filter(|(id, _)| id.as_str() != self.edge_id)
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(id, _)| id.clone())
+    }
+
+    async fn release_shadow(&mut self, target: &str, reason: &str) {
+        let payload = control_envelope::Payload::ShadowRelease(proto::ShadowRelease {
+            session_id: self.session_id.clone(),
+            target_edge_id: target.to_string(),
+            reason: reason.to_string(),
+        });
+        let _ = self.transport.request(target, payload).await;
+        let _ = self.shadows.discard(target);
+        self.emit(
+            "ShadowReleased",
+            Some(target),
+            reason,
+            HashMap::from([("reason".to_string(), reason.to_string())]),
+        );
     }
 
     async fn handle_handoff(&mut self, new_edge: &str) {
@@ -244,15 +277,35 @@ impl PrevailRuntime {
             return;
         }
 
+        let predicted = self.top_predicted_edge();
+        let prediction_correct = predicted.as_deref() == Some(new_edge);
+        if let Some(pred) = predicted.clone() {
+            if !prediction_correct {
+                self.emit(
+                    "WrongPrediction",
+                    Some(new_edge),
+                    "Predicted edge did not match arrival",
+                    HashMap::from([
+                        ("predicted".to_string(), pred.clone()),
+                        ("actual".to_string(), new_edge.to_string()),
+                    ]),
+                );
+                if pred != new_edge {
+                    self.release_shadow(&pred, "wrong prediction discarded").await;
+                }
+            }
+        }
+
         let threshold = self.config.promotion_sync_threshold;
         if self.shadows.ready_for_promotion(new_edge, threshold).is_ok() {
-            if self.transfer_authority_to(new_edge, "warm shadow promotion").await {
+            if self
+                .transfer_authority_to(new_edge, "warm shadow promotion")
+                .await
+            {
                 return;
             }
         }
 
-        // No ready shadow: fall back to reactive migration, which is the
-        // baseline PREVAIL is measured against.
         if self.shadows.list().iter().any(|s| s.edge_id == new_edge) {
             let _ = self.shadows.discard(new_edge);
             self.emit(
@@ -269,7 +322,8 @@ impl PrevailRuntime {
             "Reactive migration fallback: no warm shadow ready",
             HashMap::new(),
         );
-        self.transfer_authority_to(new_edge, "reactive migration").await;
+        self.transfer_authority_to(new_edge, "reactive migration")
+            .await;
     }
 
     /// Mints the next authority token and publishes it to the whole mesh.
@@ -336,11 +390,33 @@ impl PrevailRuntime {
             }
         }
 
+        // Send outbound ShadowRelease to any remaining shadows that were not promoted
+        for shadow in self.shadows.list() {
+            if shadow.edge_id != new_edge {
+                let release_payload = control_envelope::Payload::ShadowRelease(proto::ShadowRelease {
+                    session_id: self.session_id.clone(),
+                    target_edge_id: shadow.edge_id.clone(),
+                    reason: "released post-promotion".to_string(),
+                });
+                let _ = self.transport.request(&shadow.edge_id, release_payload).await;
+            }
+        }
+
         self.shadows.promote_shadow_to_authoritative(new_edge);
         self.shadows.clear();
         self.is_warm_shadow = false;
         self.local_sync_ratio = 0.0;
 
+        let finished = now_ms();
+        let latency_ms = self
+            .last_handoff_at_ms
+            .map(|start| finished.saturating_sub(start))
+            .unwrap_or(0);
+        let transfer_mode = if reason.contains("warm") {
+            "warm"
+        } else {
+            "reactive"
+        };
         self.emit(
             "AuthorityTransferred",
             Some(new_edge),
@@ -350,6 +426,9 @@ impl PrevailRuntime {
                 ("to".to_string(), new_edge.to_string()),
                 ("epoch".to_string(), token.epoch.to_string()),
                 ("accepted".to_string(), accepted_by_new_holder.to_string()),
+                ("latency_ms".to_string(), latency_ms.to_string()),
+                ("transfer_mode".to_string(), transfer_mode.to_string()),
+                ("reason".to_string(), reason.to_string()),
             ]),
         );
         self.emit(
@@ -366,6 +445,12 @@ impl PrevailRuntime {
         // Only the authoritative edge may prepare shadows; a shadow that
         // speculated onward could create a second writer for the session.
         if !self.is_authoritative() {
+            return;
+        }
+        let enabled = std::env::var("PREVAIL_SPECULATION_ENABLED")
+            .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+            .unwrap_or(true);
+        if !enabled {
             return;
         }
 
@@ -706,6 +791,8 @@ impl PrevailRuntime {
         self.vehicle_latitude = Some(sample.latitude);
         self.vehicle_longitude = Some(sample.longitude);
         self.vehicle_heading = sample.heading_deg;
+        self.vehicle_speed_mps = Some(sample.speed_mps);
+        self.vehicle_updated_ms = Some(now_ms());
         self.vehicle_trail.push(crate::types::VehicleTrailPoint {
             latitude: sample.latitude,
             longitude: sample.longitude,
@@ -830,6 +917,7 @@ impl PrevailRuntime {
             vehicle_longitude: self.vehicle_longitude,
             vehicle_heading: self.vehicle_heading,
             vehicle_speed_mps: self.vehicle_speed_mps,
+            vehicle_updated_ms: self.vehicle_updated_ms,
             vehicle_trail: self.vehicle_trail.clone(),
             traffic_vehicles: self.traffic_vehicles.clone(),
             predictor_degraded: self.predictor_degraded,
@@ -838,7 +926,7 @@ impl PrevailRuntime {
 
     pub fn sidecar_authority(&self) -> (bool, String, u64) {
         (
-            self.authority.holder() == self.edge_id,
+            self.is_authoritative(),
             self.authority.holder().to_string(),
             self.authority.epoch(),
         )

@@ -4,29 +4,22 @@ This subsystem manages the emulated edge topology, node capabilities, vehicle tr
 
 ## System Topology & Config
 
-- **`deploy/config/edge-regions.json`**: Geographical center coordinates and coverage radii for edge nodes (`edge-a`, `edge-b`, `edge-c`, `edge-d`). Coordinates match the PREVAIL dashboard Leaflet map (`12.9716, 77.5946` center).
+- **`deploy/config/edge-regions.json`**: Geographical center coordinates and coverage radii for edge nodes (`edge-a`, `edge-b`, `edge-c`, `edge-d`). Coordinates match the PREVAIL dashboard Leaflet map (`12.920709, 77.663605` center).
 - **`deploy/config/edge-capabilities.json`**: Resource limits (CPU/RAM ratios) and feature flags (`supports_stream`, `supports_image`, `supports_gpu`) used by Prem's speculation capability filter.
 
-## Quick Start (Docker Compose)
+## Quick Start
 
-Start the full topology stack with one command:
+**Thesis demo (four host edge processes, ADR-011):**
+
+```bash
+./scripts/run-prevail-demo.sh
+```
+
+`deploy/docker-compose.yml` starts **postgres** and **predictor** only. Edges and the road sim are host processes (`scripts/run-edge-mesh.sh`).
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build -d
-
-Services: `edge-a`…`edge-d`, `vehicle-sim`, `postgres` (schema auto-init), `predictor` (:8091).
-```
-
-Check status and verify container healthchecks are green:
-
-```bash
 docker compose -f deploy/docker-compose.yml ps
-```
-
-View vehicle trajectory simulation logs showing monotonic `edge_id` region transitions (`edge-a → edge-a → edge-b → edge-b → edge-c`):
-
-```bash
-docker compose -f deploy/docker-compose.yml logs -f vehicle-sim
 ```
 
 Stop the stack:

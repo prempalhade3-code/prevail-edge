@@ -7,11 +7,20 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background: #06080f;
+  background: #09090b;
+  font-family: Outfit, Inter, system-ui, sans-serif;
 }
 
-.leaflet-container {
-  background: #0b1220;
-  border-radius: 0.5rem;
+@layer components {
+  .hud-panel {
+    @apply rounded-2xl border border-white/10 bg-zinc-950/75 shadow-2xl backdrop-blur-xl;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
 }

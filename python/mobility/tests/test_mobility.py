@@ -17,19 +17,19 @@ class TestMobilityModule(unittest.TestCase):
 
     def test_region_mapper_coordinates(self):
         """Test exact center coordinate lookups for all four edge regions."""
-        self.assertEqual(self.mapper.get_edge_id(12.9716, 77.5946), "edge-a")
-        self.assertEqual(self.mapper.get_edge_id(12.9750, 77.6050), "edge-b")
-        self.assertEqual(self.mapper.get_edge_id(12.9650, 77.6100), "edge-c")
-        self.assertEqual(self.mapper.get_edge_id(12.9800, 77.5850), "edge-d")
+        self.assertEqual(self.mapper.get_edge_id(12.920709, 77.663605), "edge-a")
+        self.assertEqual(self.mapper.get_edge_id(12.928155, 77.681794), "edge-b")
+        self.assertEqual(self.mapper.get_edge_id(12.941340, 77.696074), "edge-c")
+        self.assertEqual(self.mapper.get_edge_id(12.956990, 77.703291), "edge-d")
 
     def test_haversine_distance(self):
         """Test haversine distance calculation is positive for distinct points."""
-        dist = haversine_distance_m(12.9716, 77.5946, 12.9750, 77.6050)
+        dist = haversine_distance_m(12.920709, 77.663605, 12.928155, 77.681794)
         self.assertGreater(dist, 100.0)
 
     def test_estimate_eta(self):
         """Test ETA estimation from edge-a center to edge-b center."""
-        gps_a = (12.9716, 77.5946)
+        gps_a = (12.920709, 77.663605)
         eta_sec = estimate_eta(gps_a, "edge-b", speed_mps=15.0, region_mapper=self.mapper)
         self.assertGreater(eta_sec, 0.0)
 

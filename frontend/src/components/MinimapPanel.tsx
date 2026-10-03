@@ -1,31 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
-import L from "leaflet";
+import { useEffect, useRef } from "react";
 import type { SystemSnapshot } from "../types";
+import { ORIGIN_LAT, ORIGIN_LON } from "../lib/geo";
+
+const W = 280;
+const H = 200;
 
 function roleColor(role: string): string {
-  if (role === "AUTHORITATIVE") return "#10b981";
-  if (role === "WARM_SHADOW") return "#f59e0b";
+  if (role === "AUTHORITATIVE") return "#34d399";
+  if (role === "WARM_SHADOW") return "#fbbf24";
   return "#64748b";
 }
 
-const heroIcon = L.divIcon({
-  className: "",
-  html: `<div style="width:14px;height:14px;background:#22d3ee;border-radius:50%;box-shadow:0 0 12px #22d3ee;border:2px solid white;"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-function MapFollower({ center }: { center: [number, number] }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true, duration: 0.4 });
-  }, [center, map]);
-  return null;
-}
-
 export function MinimapPanel({ snapshot }: { snapshot: SystemSnapshot | null }) {
-  const [roads, setRoads] = useState<[number, number][][]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const roadsRef = useRef<[number, number][][]>([]);
 
   useEffect(() => {
     fetch("/city/roads.geojson")
@@ -38,81 +26,80 @@ export function MinimapPanel({ snapshot }: { snapshot: SystemSnapshot | null }) 
             lines.push(g.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]));
           }
         }
-        setRoads(lines);
+        roadsRef.current = lines;
       })
-      .catch(() => setRoads([]));
+      .catch(() => {
+        roadsRef.current = [];
+      });
   }, []);
 
-  const center: [number, number] =
-    snapshot?.vehicle_latitude != null && snapshot?.vehicle_longitude != null
-      ? [snapshot.vehicle_latitude, snapshot.vehicle_longitude]
-      : [12.94, 77.686];
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-  const trail = useMemo(
-    () => snapshot?.vehicle_trail?.map((p) => [p.latitude, p.longitude] as [number, number]) ?? [],
-    [snapshot?.vehicle_trail],
-  );
+    const lat = snapshot?.vehicle_latitude ?? ORIGIN_LAT;
+    const lon = snapshot?.vehicle_longitude ?? ORIGIN_LON;
+    const span = 0.012;
+    const toX = (lng: number) => ((lng - (lon - span)) / (span * 2)) * W;
+    const toY = (la: number) => (1 - (la - (lat - span)) / (span * 2)) * H;
 
-  const predictedEdge = useMemo(() => {
-    if (!snapshot?.prediction?.probabilities) return null;
-    const current = snapshot.current_edge_id;
-    const ranked = Object.entries(snapshot.prediction.probabilities)
-      .filter(([id]) => id !== current)
-      .sort(([, a], [, b]) => b - a);
-    if (!ranked.length) return null;
-    const [edgeId] = ranked[0];
-    return snapshot.topology?.find((n) => n.edge_id === edgeId) ?? null;
-  }, [snapshot?.prediction, snapshot?.current_edge_id, snapshot?.topology]);
+    ctx.fillStyle = "#070b12";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = "#1e293b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (const line of roadsRef.current) {
+      line.forEach(([la, lng], i) => {
+        const x = toX(lng);
+        const y = toY(la);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+    }
+    ctx.stroke();
+
+    const trail = snapshot?.vehicle_trail ?? [];
+    if (trail.length > 1) {
+      ctx.strokeStyle = "#22d3ee";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      trail.forEach((p, i) => {
+        const x = toX(p.longitude);
+        const y = toY(p.latitude);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    for (const n of snapshot?.topology ?? []) {
+      ctx.beginPath();
+      ctx.fillStyle = roleColor(n.role);
+      ctx.globalAlpha = 0.85;
+      ctx.arc(toX(n.longitude), toY(n.latitude), n.role === "AUTHORITATIVE" ? 5 : 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.beginPath();
+    ctx.fillStyle = "#f8fafc";
+    ctx.shadowColor = "#22d3ee";
+    ctx.shadowBlur = 12;
+    ctx.arc(toX(lon), toY(lat), 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }, [snapshot]);
 
   return (
-    <div className="rounded-xl overflow-hidden border border-white/10 bg-black/55 backdrop-blur-xl shadow-2xl">
-      <div className="px-3 py-2 border-b border-white/10 flex justify-between items-center">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-white/60">Tactical Map</span>
-        <span className="text-[10px] font-mono text-cyan-300/90">{snapshot?.current_edge_id ?? "—"}</span>
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 shadow-2xl backdrop-blur-xl">
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/50">Corridor</span>
+        <span className="font-mono text-[10px] text-cyan-300">{snapshot?.current_edge_id ?? "—"}</span>
       </div>
-      <div className="h-64 w-full">
-        <MapContainer center={center} zoom={15} className="h-full w-full" zoomControl={false} attributionControl={false}>
-          <MapFollower center={center} />
-          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}" />
-          {roads.map((line, i) => (
-            <Polyline key={i} positions={line} pathOptions={{ color: "#475569", weight: 4, opacity: 0.9 }} />
-          ))}
-          {trail.length > 1 && (
-            <Polyline positions={trail} pathOptions={{ color: "#22d3ee", weight: 3, opacity: 0.85 }} />
-          )}
-          {snapshot?.topology.map((n) => (
-            <Circle
-              key={n.edge_id}
-              center={[n.latitude, n.longitude]}
-              radius={n.role === "AUTHORITATIVE" ? 120 : 90}
-              pathOptions={{
-                color: roleColor(n.role),
-                fillColor: roleColor(n.role),
-                fillOpacity: n.role === "WARM_SHADOW" ? 0.2 : 0.1,
-                weight: n.role === "AUTHORITATIVE" ? 2 : 1,
-              }}
-            />
-          ))}
-          {predictedEdge && (
-            <Circle
-              center={[predictedEdge.latitude, predictedEdge.longitude]}
-              radius={100}
-              pathOptions={{ color: "#8b5cf6", fillColor: "#7c3aed", fillOpacity: 0.12, weight: 2, dashArray: "6 4" }}
-            />
-          )}
-          {snapshot?.traffic_vehicles?.map((v) => (
-            <Circle
-              key={v.vehicle_id}
-              center={[v.latitude, v.longitude]}
-              radius={10}
-              pathOptions={{ color: "#fbbf24", fillColor: "#fbbf24", fillOpacity: 0.8, weight: 0 }}
-            />
-          ))}
-          {snapshot?.vehicle_latitude != null && snapshot?.vehicle_longitude != null && (
-            <Marker position={[snapshot.vehicle_latitude, snapshot.vehicle_longitude]} icon={heroIcon} />
-          )}
-        </MapContainer>
-      </div>
+      <canvas ref={canvasRef} width={W} height={H} className="block h-[200px] w-full" />
     </div>
   );
 }

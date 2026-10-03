@@ -1,42 +1,21 @@
 # PREVAIL experiments
 
-Batch runner for scenario-based PREVAIL vs baseline comparison.
+Batch runner for **live** PREVAIL vs reactive-fallback measurements.
 
-## Quick start
+Requires `./scripts/run-prevail-demo.sh` so `/v1/snapshot` has `AuthorityTransferred.latency_ms`.
 
 ```bash
-pip install pyyaml psycopg2-binary  # optional Postgres persist
+python experiments/sweep.py --experiment ALL --scenario experiments/scenarios/golden.yaml
 python experiments/runner.py --scenario experiments/scenarios/golden.yaml
 ```
 
-Dry run (no CSV output):
+If the mesh is down, CSVs are written with `metric_source=unavailable` and zeros — they do **not** invent 45/550 ms.
+
+Image-capability scenario:
 
 ```bash
-python experiments/runner.py --dry-run
+PREVAIL_REQUIRE_IMAGE_CAPABILITY=true python experiments/runner.py \
+  --scenario experiments/scenarios/image-capability.yaml
 ```
 
-## Scenarios
-
-| File | Description |
-|------|-------------|
-| `scenarios/golden.yaml` | A→A→B→B→C handoff trace |
-
-Results land in `experiments/results/*.csv`.
-
-## Flink integration
-
-When `FLINK_HOME` is set and the job jar is built:
-
-```bash
-cd flink/prevail-coordinator && mvn -q install
-cd ../prevail-job && mvn -q package
-export FLINK_HOME=/path/to/flink
-python experiments/runner.py
-```
-
-Otherwise the runner uses deterministic Python simulators for baseline and PREVAIL metrics.
-
-## Postgres metrics
-
-Set `PREVAIL_DATABASE_URL=postgresql://prevail:prevail_password@localhost:5432/prevail`
-to persist run records and metric samples.
+Set `PREVAIL_DATABASE_URL` (Postgres or `sqlite:///experiments/prevail-timeline.db`) to persist metric samples.
