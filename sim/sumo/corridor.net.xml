@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Simplified SUMO network aligned with bangalore-corridor.geojson spine -->
+<net version="1.16" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+  <location netOffset="0.00,0.00" convBoundary="0.00,0.00,2000.00,800.00" origBoundary="0.00,0.00,2000.00,800.00" projParameter="!"/>
+  <edge id="e_spine_0" from="n0" to="n1" priority="3" numLanes="4" speed="16.70"/>
+  <edge id="e_spine_1" from="n1" to="n2" priority="3" numLanes="4" speed="16.70"/>
+  <edge id="e_spine_2" from="n2" to="n3" priority="3" numLanes="3" speed="13.90"/>
+  <edge id="e_spine_3" from="n3" to="n4" priority="3" numLanes="3" speed="13.90"/>
+  <junction id="n0" type="dead_end" x="0.00" y="400.00" incLanes="" intLanes="" shape="0.00,400.00"/>
+  <junction id="n1" type="priority" x="500.00" y="400.00" incLanes="" intLanes="" shape="500.00,400.00"/>
+  <junction id="n2" type="priority" x="1000.00" y="380.00" incLanes="" intLanes="" shape="1000.00,380.00"/>
+  <junction id="n3" type="priority" x="1500.00" y="350.00" incLanes="" intLanes="" shape="1500.00,350.00"/>
+  <junction id="n4" type="dead_end" x="2000.00" y="300.00" incLanes="" intLanes="" shape="2000.00,300.00"/>
+</net>
