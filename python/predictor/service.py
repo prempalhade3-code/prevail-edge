@@ -158,6 +158,16 @@ class PredictorEngine:
             else:
                 probabilities = self.config.get_fallback_probabilities()
 
+        # Next-edge distribution: exclude current edge and re-normalize.
+        current = current_edge or (seq[-1] if seq else None)
+        if current and current in probabilities:
+            remaining = {k: v for k, v in probabilities.items() if k != current}
+            if remaining:
+                total_p = sum(remaining.values())
+                probabilities = {k: round(v / total_p, 6) for k, v in remaining.items()}
+            else:
+                probabilities = self.config.get_fallback_probabilities()
+
         # Ensure exact sum to 1.0
         total_p = sum(probabilities.values())
         if total_p > 0:
