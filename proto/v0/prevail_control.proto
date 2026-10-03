@@ -133,6 +133,13 @@ message ShadowCreateAck {
   string reason = 4;
 }
 
+// Authoritative → warm shadow stream tee (ADR-003 record lag ratio).
+message StateReplicate {
+  string session_id = 1;
+  uint64 sequence = 2;
+  TrajectorySample sample = 3;
+}
+
 // Self-describing wrapper for every control-plane message on the QUIC mesh.
 // Each request/response pair uses one bidirectional stream, so QUIC gives us
 // framing and the envelope gives us the type: a parallel numeric tag registry
@@ -155,5 +162,6 @@ message ControlEnvelope {
     AuthorityTransfer authority_transfer = 18;
     DemotionNotice demotion_notice = 19;
     EdgeCapabilityAdvertisement capability_advertisement = 20;
+    StateReplicate state_replicate = 21;
   }
 }
