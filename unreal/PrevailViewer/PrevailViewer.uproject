@@ -1,0 +1,13 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Simulation",
+  "Description": "PREVAIL live viewer. The Rust/FastAPI mesh stays the brain; this pawn only consumes /v1/snapshot.",
+  "Modules": [
+    {
+      "Name": "PrevailViewer",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
