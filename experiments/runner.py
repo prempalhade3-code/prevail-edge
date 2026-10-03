@@ -166,10 +166,10 @@ def persist_to_postgres(run_id: str, scenario: Scenario, metrics: Dict[str, floa
             for name, value in metrics.items():
                 cur.execute(
                     """
-                    INSERT INTO metric_samples (run_id, metric_name, value, timestamp_ms)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO metric_samples (run_id, metric_name, value, edge_id, timestamp_ms, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                     """,
-                    (run_id, name, value, ts),
+                    (run_id, name, value, scenario.id, ts, json.dumps({"mode": scenario.mode})),
                 )
         conn.commit()
     finally:
