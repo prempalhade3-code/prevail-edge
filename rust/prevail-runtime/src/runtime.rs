@@ -3,7 +3,7 @@ use crate::config::{load_capabilities_from_file, load_topology_from_file, resolv
 use crate::predictor::{PredictorClient, mock_prediction};
 use crate::shadow::{ShadowError, ShadowManager};
 use crate::speculation::evaluate_speculation;
-use crate::transport::{ControlTransport, QuicTransportStub};
+use crate::transport::{ControlTransport, InMemoryTransport};
 use crate::types::{
     EdgeCapability, PredictionResult, ShadowRole, SpeculationConfig, SystemSnapshot, TimelineEvent,
     TopologyNode, TrajectorySample,
@@ -79,7 +79,7 @@ impl PrevailRuntime {
             prediction: None,
             timeline: Vec::new(),
             mode: "prevail".into(),
-            transport: Arc::new(QuicTransportStub::new(local_edge_id, peers)),
+            transport: Arc::new(InMemoryTransport::new(local_edge_id, peers)),
             predictor_url: predictor_url.to_string(),
             demo_step: 0,
             vehicle_latitude: None,
@@ -92,6 +92,30 @@ impl PrevailRuntime {
 
     pub fn local_edge_id(&self) -> &str {
         &self.local_edge_id
+    }
+
+    /// Swaps the in-memory placeholder for the real QUIC mesh.
+    ///
+    /// `main` calls this at startup and logs loudly if it fails, so a runtime
+    /// that never reached the mesh is visible instead of quietly pretending
+    /// its peers are healthy.
+    pub fn attach_transport(&mut self, transport: Arc<dyn ControlTransport>) {
+        self.emit(
+            "MeshAttached",
+            Some(&self.local_edge_id.clone()),
+            &format!("control plane: {}", transport.kind()),
+            HashMap::from([
+                ("transport".to_string(), transport.kind().to_string()),
+                ("peers".to_string(), transport.peers().join(",")),
+            ]),
+        );
+        self.transport = transport;
+    }
+
+    /// Transport in use, surfaced so the dashboard can distinguish a real mesh
+    /// from the test placeholder.
+    pub fn transport_kind(&self) -> &'static str {
+        self.transport.kind()
     }
 
     pub fn update_traffic(&mut self, vehicles: Vec<crate::types::TrafficVehicle>) {
@@ -337,8 +361,8 @@ impl PrevailRuntime {
         )
     }
 
-    pub fn peer_health(&self) -> HashMap<String, bool> {
-        crate::transport::mesh_health(self.transport.as_ref())
+    pub async fn peer_health(&self) -> HashMap<String, bool> {
+        crate::transport::mesh_health(self.transport.as_ref()).await
     }
 }
 
