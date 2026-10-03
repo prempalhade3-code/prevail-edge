@@ -75,8 +75,8 @@ public class VehicleAggregateFunction
         try {
             SidecarClient.AuthorityState auth = sidecar.getAuthority(sample.sessionId);
             outputEnabled = auth.outputEnabled();
-        } catch (Exception ignored) {
-            outputEnabled = true;
+        } catch (Exception ex) {
+            outputEnabled = false;
         }
 
         if (outputEnabled) {
