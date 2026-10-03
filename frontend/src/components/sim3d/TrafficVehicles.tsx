@@ -128,7 +128,6 @@ function ModelFleet({ model, traffic }: ModelFleetProps) {
       geometry={merged.geometry}
       material={merged.material}
       args={[merged.geometry, merged.material, MAX_PER_MODEL]}
-      castShadow
       frustumCulled={false}
     />
   );
