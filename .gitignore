@@ -37,6 +37,8 @@ npm-debug.log*
 *.jar
 !flink/lib/.gitkeep
 .idea/
+flink/**/target/
+flink/**/dependency-reduced-pom.xml
 
 # ML artifacts (keep small exported models if intentional)
 python/predictor/runs/
