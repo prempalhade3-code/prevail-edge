@@ -15,6 +15,9 @@ use tokio::sync::RwLock;
 pub struct PrevailRuntime {
     pub run_id: String,
     pub session_id: String,
+    /// Fixed identity of this edge process.
+    local_edge_id: String,
+    /// Edge the vehicle is currently in.
     pub edge_id: String,
     authority: AuthorityManager,
     shadows: ShadowManager,
@@ -36,6 +39,19 @@ pub struct PrevailRuntime {
 
 impl PrevailRuntime {
     pub fn new_lab(run_id: &str, session_id: &str, secret: &str, predictor_url: &str) -> Self {
+        Self::new_for_edge(run_id, session_id, secret, predictor_url, "edge-a")
+    }
+
+    /// Builds a runtime that identifies as `local_edge_id`. Each edge process in
+    /// the mesh owns exactly one of these; `local_edge_id` is fixed for the
+    /// lifetime of the process, while `edge_id` tracks where the vehicle is.
+    pub fn new_for_edge(
+        run_id: &str,
+        session_id: &str,
+        secret: &str,
+        predictor_url: &str,
+        local_edge_id: &str,
+    ) -> Self {
         let (regions_path, caps_path) = resolve_config_paths();
         let capabilities = caps_path
             .as_deref()
@@ -45,12 +61,17 @@ impl PrevailRuntime {
             .as_deref()
             .and_then(load_topology_from_file)
             .unwrap_or_else(default_topology);
-        let peers: Vec<String> = capabilities.keys().cloned().collect();
+        let peers: Vec<String> = capabilities
+            .keys()
+            .filter(|id| id.as_str() != local_edge_id)
+            .cloned()
+            .collect();
         Self {
             run_id: run_id.to_string(),
             session_id: session_id.to_string(),
-            edge_id: "edge-a".to_string(),
-            authority: AuthorityManager::new(session_id, "edge-a", secret),
+            local_edge_id: local_edge_id.to_string(),
+            edge_id: local_edge_id.to_string(),
+            authority: AuthorityManager::new(session_id, local_edge_id, secret),
             shadows: ShadowManager::default(),
             config: SpeculationConfig::default(),
             capabilities,
@@ -58,7 +79,7 @@ impl PrevailRuntime {
             prediction: None,
             timeline: Vec::new(),
             mode: "prevail".into(),
-            transport: Arc::new(QuicTransportStub::new("edge-a", peers)),
+            transport: Arc::new(QuicTransportStub::new(local_edge_id, peers)),
             predictor_url: predictor_url.to_string(),
             demo_step: 0,
             vehicle_latitude: None,
@@ -67,6 +88,10 @@ impl PrevailRuntime {
             vehicle_trail: Vec::new(),
             traffic_vehicles: Vec::new(),
         }
+    }
+
+    pub fn local_edge_id(&self) -> &str {
+        &self.local_edge_id
     }
 
     pub fn update_traffic(&mut self, vehicles: Vec<crate::types::TrafficVehicle>) {
