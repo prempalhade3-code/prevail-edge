@@ -35,7 +35,7 @@ class TimelineStore:
                     """
                     INSERT INTO runs (run_id, scenario_id, mode, status)
                     VALUES (%s, 'live', 'prevail', 'running')
-                    ON CONFLICT (run_id) DO NOTHING
+                    ON CONFLICT (run_id) DO UPDATE SET status = 'running'
                     """,
                     (run_id,),
                 )
@@ -49,6 +49,7 @@ class TimelineStore:
                         INSERT INTO timeline_events
                             (run_id, timestamp_ms, event_type, edge_id, message, payload)
                         VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (run_id, timestamp_ms, event_type, message) DO NOTHING
                         """,
                         (
                             run_id,
@@ -59,8 +60,9 @@ class TimelineStore:
                             json.dumps(payload),
                         ),
                     )
-                    self._seen.add(key)
-                    inserted += 1
+                    if cur.rowcount:
+                        self._seen.add(key)
+                        inserted += 1
             conn.commit()
         finally:
             conn.close()
