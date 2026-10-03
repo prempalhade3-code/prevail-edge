@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from python.mobility.region_mapper import RegionMapper
+from python.mobility.session_config import get_session_id
 
 
 @dataclass
@@ -138,7 +139,7 @@ def run_simulation(
     route = densify_route(load_primary_route(network), step_m=6.0)
     mapper = RegionMapper()
     traffic = TrafficModel()
-    session_id = "sim-vehicle-01"
+    session_id = get_session_id()
     interval = 1.0 / hz
     fleet_offsets = spawn_traffic_fleet(route, count=10)
     fleet_pos = list(fleet_offsets)
