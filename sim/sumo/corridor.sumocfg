@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+  <input>
+    <net-file value="corridor.net.xml"/>
+    <route-files value="corridor.rou.xml"/>
+  </input>
+  <time>
+    <begin value="0"/>
+    <end value="3600"/>
+    <step-length value="0.2"/>
+  </time>
+  <output>
+    <fcd-output value="../fixtures/sumo-fcd.jsonl"/>
+    <fcd-output.geo value="true"/>
+  </output>
+  <processing>
+    <collision.action value="warn"/>
+    <time-to-teleport value="-1"/>
+  </processing>
+</configuration>
