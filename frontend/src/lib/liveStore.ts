@@ -1,77 +1,114 @@
 /**
  * Motion smoothing between PREVAIL snapshots.
  *
- * Snapshots arrive about ten times a second while the scene renders at display
- * rate, so poses are dead-reckoned forward from the newest snapshot and the drawn
- * pose chases that prediction with a critically damped follow. This keeps motion
- * continuous without ever inventing movement: the prediction is only the reported
- * position advanced along the reported heading at the reported speed, and every
- * new snapshot corrects it.
- *
- * The hot path allocates nothing, so there is no per-frame garbage.
+ * Snapshots arrive a few times a second and can repeat or arrive stale from a
+ * non-authoritative edge. The drawn pose coasts on the last measured velocity
+ * and treats GPS as a correction, never as a teleport. Dead-reckoning along
+ * compass heading used to run ahead of GPS and then snap back every tick.
  */
 import { headingToYaw, latLonToXZ, lerpAngle } from "./geo";
 import type { SystemSnapshot } from "../types";
 
 export type Pose = { x: number; z: number; yaw: number; speed: number };
 
-/** How quickly the drawn pose converges on the predicted pose, per second. */
-const FOLLOW_RATE = 9;
-/** Dead reckoning is capped so a stalled feed cannot drift the vehicle away. */
-const MAX_EXTRAPOLATION_S = 0.6;
+/** Seconds to catch ~63% of the way to the coasting GPS target. */
+const FOLLOW_TAU = 0.11;
+/** Coast at most this long if GPS stalls, so the car does not run away. */
+const MAX_COAST_S = 0.7;
+/** Ignore a GPS that is behind the car — that is a late snapshot. */
+const STALE_BEHIND_M = 0.4;
+/** Treat a GPS closer than this as the same sample. */
+const SAME_SAMPLE_M = 0.08;
 
-function follow(current: number, target: number, delta: number): number {
-  return current + (target - current) * Math.min(1, FOLLOW_RATE * delta);
+function damp(current: number, target: number, delta: number): number {
+  const k = 1 - Math.exp(-delta / FOLLOW_TAU);
+  return current + (target - current) * k;
 }
 
 export class PoseTracker {
-  private targetX = 0;
-  private targetZ = 0;
-  private targetYaw = 0;
+  private goalX = 0;
+  private goalZ = 0;
+  private goalYaw = 0;
+  private vx = 0;
+  private vz = 0;
   private speed = 0;
-  private sinceSnapshot = 0;
   private drawnX = 0;
   private drawnZ = 0;
   private drawnYaw = 0;
   private lastSample = 0;
+  private lastGoalAt = 0;
   initialised = false;
+
+  private applyVelocity(speed: number, yaw: number): void {
+    this.vx = Math.sin(yaw) * speed;
+    this.vz = Math.cos(yaw) * speed;
+  }
+
+  private along(dx: number, dz: number): number {
+    const travel = Math.hypot(this.vx, this.vz);
+    if (travel < 0.2) {
+      return dx * Math.sin(this.goalYaw) + dz * Math.cos(this.goalYaw);
+    }
+    return (dx * this.vx + dz * this.vz) / travel;
+  }
 
   setTarget(lat: number, lon: number, headingDeg: number, speed: number): void {
     const [x, z] = latLonToXZ(lat, lon);
-    this.targetX = x;
-    this.targetZ = z;
-    this.targetYaw = headingToYaw(headingDeg);
-    this.speed = speed;
-    this.sinceSnapshot = 0;
+    const now = performance.now();
+    const compassYaw = headingToYaw(headingDeg);
+
     if (!this.initialised) {
       this.drawnX = x;
       this.drawnZ = z;
-      this.drawnYaw = this.targetYaw;
+      this.goalX = x;
+      this.goalZ = z;
+      this.drawnYaw = compassYaw;
+      this.goalYaw = compassYaw;
+      this.speed = speed;
+      this.applyVelocity(speed, compassYaw);
+      this.lastGoalAt = now;
       this.initialised = true;
+      return;
     }
+
+    const dx = x - this.goalX;
+    const dz = z - this.goalZ;
+    const moved = Math.hypot(dx, dz);
+
+    // Same GPS again (aggregator / WS repeats). Keep coasting; do not reset age.
+    if (moved < SAME_SAMPLE_M) {
+      this.speed = speed;
+      this.applyVelocity(speed, this.goalYaw);
+      return;
+    }
+
+    if (this.speed > 0.4 && this.along(x - this.drawnX, z - this.drawnZ) < -STALE_BEHIND_M) {
+      return;
+    }
+
+    const dt = Math.max((now - this.lastGoalAt) / 1000, 1e-3);
+    const gpsYaw = Math.atan2(dx, dz);
+    const yaw = moved / dt > 0.4 ? gpsYaw : compassYaw;
+
+    this.goalX = x;
+    this.goalZ = z;
+    this.goalYaw = yaw;
+    this.speed = speed;
+    this.applyVelocity(speed > 0.3 ? speed : moved / dt, yaw);
+    this.lastGoalAt = now;
   }
 
-  /**
-   * Advance by wall-clock time since the previous call and write the drawn pose.
-   *
-   * Timing is taken from the clock rather than a passed-in delta so that several
-   * consumers in one frame cannot double-advance or depend on callback ordering:
-   * the elapsed time is simply split between them and the total stays correct.
-   */
   sample(out: Pose, now = performance.now()): void {
-    const delta = this.lastSample === 0 ? 0 : Math.min((now - this.lastSample) / 1000, 0.25);
+    const delta = this.lastSample === 0 ? 0 : Math.min((now - this.lastSample) / 1000, 0.05);
     this.lastSample = now;
-    this.sinceSnapshot = Math.min(this.sinceSnapshot + delta, MAX_EXTRAPOLATION_S);
 
-    // Advance the last known pose along its own heading. A yaw of PI - bearing
-    // means the forward vector is (sin yaw, cos yaw).
-    const reach = this.speed * this.sinceSnapshot;
-    const predictedX = this.targetX + Math.sin(this.targetYaw) * reach;
-    const predictedZ = this.targetZ + Math.cos(this.targetYaw) * reach;
+    const age = this.lastGoalAt === 0 ? 0 : Math.min((now - this.lastGoalAt) / 1000, MAX_COAST_S);
+    const predX = this.goalX + this.vx * age;
+    const predZ = this.goalZ + this.vz * age;
 
-    this.drawnX = follow(this.drawnX, predictedX, delta);
-    this.drawnZ = follow(this.drawnZ, predictedZ, delta);
-    this.drawnYaw = lerpAngle(this.drawnYaw, this.targetYaw, Math.min(1, FOLLOW_RATE * delta));
+    this.drawnX = damp(this.drawnX, predX, delta);
+    this.drawnZ = damp(this.drawnZ, predZ, delta);
+    this.drawnYaw = lerpAngle(this.drawnYaw, this.goalYaw, Math.min(1, delta / FOLLOW_TAU));
 
     out.x = this.drawnX;
     out.z = this.drawnZ;
@@ -105,14 +142,12 @@ export class TrafficTracker {
     }
   }
 
-  /** Advance every tracked vehicle once per frame. */
   advance(now = performance.now()): void {
     for (const entry of this.entries.values()) {
       entry.tracker.sample(entry.pose, now);
     }
   }
 
-  /** Read poses without advancing (call after `advance`). */
   poses(): IterableIterator<TrafficEntry> {
     return this.entries.values();
   }
@@ -122,10 +157,6 @@ export class TrafficTracker {
   }
 }
 
-/**
- * PREVAIL control-plane state, mirrored from the snapshot into a mutable object so
- * the 3D scene can read it inside the render loop without re-rendering React.
- */
 export type PrevailView = {
   currentEdge: string | null;
   authorityHolder: string | null;
@@ -150,7 +181,6 @@ export function createPrevailView(): PrevailView {
   };
 }
 
-/** The runtime reports a distribution over next edges; the top entry is the call. */
 export function topPrediction(
   probabilities: Record<string, number> | undefined,
   exclude?: string | null,
