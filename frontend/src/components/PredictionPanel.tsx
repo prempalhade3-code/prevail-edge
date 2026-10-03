@@ -4,9 +4,11 @@ import type { PredictionResult } from "../types";
 export function PredictionPanel({
   prediction,
   currentEdge,
+  degraded = false,
 }: {
   prediction: PredictionResult | null;
   currentEdge: string;
+  degraded?: boolean;
 }) {
   if (!prediction) {
     return (
@@ -24,6 +26,11 @@ export function PredictionPanel({
   return (
     <div className="rounded-lg bg-prevail-panel p-4 border border-slate-700">
       <h2 className="text-sm font-semibold text-slate-300 mb-2">Next edge prediction</h2>
+      {degraded && (
+        <p className="text-xs text-amber-400 mb-2 border border-amber-600/40 rounded px-2 py-1">
+          Predictor unavailable — showing explicit degraded fallback
+        </p>
+      )}
       <ul className="space-y-1 mb-3">
         {data.map((d) => (
           <li key={d.edge} className="flex justify-between text-sm">
