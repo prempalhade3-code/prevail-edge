@@ -1,6 +1,8 @@
 use prevail_runtime::api::{serve, AppState};
 use prevail_runtime::config::load_session_config;
-use prevail_runtime::quic::{MeshAddressBook, PingOnlyHandler, QuicControlServer};
+use prevail_runtime::mesh::MeshControlHandler;
+use prevail_runtime::proto::control_envelope;
+use prevail_runtime::quic::{MeshAddressBook, QuicControlServer};
 use prevail_runtime::runtime::PrevailRuntime;
 use prevail_runtime::transport::QuicTransport;
 use std::env;
@@ -61,6 +63,7 @@ async fn main() {
         &session.authority_secret,
         &predictor_url,
         &local_edge_id,
+        &session.bootstrap_edge_id,
     )));
 
     start_control_mesh(&local_edge_id, &runtime).await;
@@ -71,6 +74,8 @@ async fn main() {
         rt.advance_demo().await;
     }
 
+    spawn_mesh_tick(runtime.clone());
+
     let addr: SocketAddr = format!("{}:{}", host, port).parse().expect("valid listen addr");
     let state = AppState {
         runtime: runtime.clone(),
@@ -80,6 +85,34 @@ async fn main() {
         tracing::error!("server error: {}", e);
         std::process::exit(1);
     }
+}
+
+/// Drives warm-shadow catch-up and reports readiness to the authority.
+///
+/// Owned by the process rather than by a dashboard connection, so progress does
+/// not depend on anyone watching.
+fn spawn_mesh_tick(runtime: prevail_runtime::SharedRuntime) {
+    const TICK: std::time::Duration = std::time::Duration::from_millis(250);
+
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(TICK);
+        loop {
+            ticker.tick().await;
+
+            let (transport, report) = {
+                let mut rt = runtime.write().await;
+                rt.tick_warm_shadow();
+                (rt.transport(), rt.sync_report())
+            };
+
+            if let Some((holder, status)) = report {
+                let payload = control_envelope::Payload::ShadowSyncStatus(status);
+                if let Err(e) = transport.request(&holder, payload).await {
+                    tracing::debug!("sync report to {holder} failed: {e}");
+                }
+            }
+        }
+    });
 }
 
 /// Binds this edge's QUIC listener and attaches the mesh client.
@@ -102,9 +135,7 @@ async fn start_control_mesh(local_edge_id: &str, runtime: &prevail_runtime::Shar
     match QuicControlServer::bind(bind_addr) {
         Ok(server) => {
             tracing::info!(edge = %local_edge_id, addr = %server.local_addr(), "QUIC control plane listening");
-            let handler = Arc::new(PingOnlyHandler {
-                local_edge_id: local_edge_id.to_string(),
-            });
+            let handler = Arc::new(MeshControlHandler::new(local_edge_id, runtime.clone()));
             tokio::spawn(server.serve(handler));
         }
         Err(e) => {
