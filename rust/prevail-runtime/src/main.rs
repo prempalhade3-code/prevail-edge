@@ -1,6 +1,8 @@
 use prevail_runtime::api::{serve, AppState};
 use prevail_runtime::config::load_session_config;
+use prevail_runtime::quic::{MeshAddressBook, PingOnlyHandler, QuicControlServer};
 use prevail_runtime::runtime::PrevailRuntime;
+use prevail_runtime::transport::QuicTransport;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -61,6 +63,8 @@ async fn main() {
         &local_edge_id,
     )));
 
+    start_control_mesh(&local_edge_id, &runtime).await;
+
     let live_sim = env::var("PREVAIL_LIVE_SIM").is_ok() || env::var("PREVAIL_SKIP_DEMO_BOOTSTRAP").is_ok();
     if !live_sim {
         let mut rt = runtime.write().await;
@@ -75,5 +79,47 @@ async fn main() {
     if let Err(e) = serve(addr, state).await {
         tracing::error!("server error: {}", e);
         std::process::exit(1);
+    }
+}
+
+/// Binds this edge's QUIC listener and attaches the mesh client.
+///
+/// A failure here is logged as an error and leaves the runtime on its
+/// placeholder transport: the HTTP API stays up so the operator can see a
+/// degraded mesh rather than losing the process entirely.
+async fn start_control_mesh(local_edge_id: &str, runtime: &prevail_runtime::SharedRuntime) {
+    let address_book = MeshAddressBook::from_env_or_default();
+
+    let Some(bind_addr) = address_book.address_of(local_edge_id) else {
+        tracing::error!(
+            edge = %local_edge_id,
+            peers = ?address_book.edge_ids(),
+            "edge has no QUIC address in the mesh address book; control plane disabled"
+        );
+        return;
+    };
+
+    match QuicControlServer::bind(bind_addr) {
+        Ok(server) => {
+            tracing::info!(edge = %local_edge_id, addr = %server.local_addr(), "QUIC control plane listening");
+            let handler = Arc::new(PingOnlyHandler {
+                local_edge_id: local_edge_id.to_string(),
+            });
+            tokio::spawn(server.serve(handler));
+        }
+        Err(e) => {
+            tracing::error!(edge = %local_edge_id, addr = %bind_addr, "QUIC listener bind failed: {e}");
+            return;
+        }
+    }
+
+    match QuicTransport::new(local_edge_id, address_book) {
+        Ok(transport) => {
+            runtime.write().await.attach_transport(Arc::new(transport));
+            tracing::info!(edge = %local_edge_id, "mesh client attached");
+        }
+        Err(e) => {
+            tracing::error!(edge = %local_edge_id, "QUIC mesh client failed: {e}");
+        }
     }
 }
