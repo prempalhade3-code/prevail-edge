@@ -37,15 +37,27 @@ class PredictionResponse(BaseModel):
 
 
 class SessionHistoryStore:
-    """In-memory sliding window store for active vehicle session trajectories."""
+    """In-memory sliding window of the *edge transition* sequence per session.
+
+    Consecutive duplicates are collapsed. The simulator reports at 5 Hz, so
+    recording every sample would fill the window with one repeated edge and the
+    model would never see a transition. The GRU is trained on transition
+    sequences, so the serving-time history must be shaped the same way.
+    """
 
     def __init__(self, max_history: int = 20):
         self.max_history = max_history
         self._history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=self.max_history))
         self._last_speed: Dict[str, float] = {}
+        self._dwell_samples: Dict[str, int] = defaultdict(int)
 
     def record_step(self, session_id: str, edge_id: str, speed_mps: Optional[float] = None):
-        self._history[session_id].append(edge_id)
+        history = self._history[session_id]
+        if not history or history[-1] != edge_id:
+            history.append(edge_id)
+            self._dwell_samples[session_id] = 1
+        else:
+            self._dwell_samples[session_id] += 1
         if speed_mps is not None:
             self._last_speed[session_id] = speed_mps
 
@@ -54,6 +66,19 @@ class SessionHistoryStore:
 
     def get_speed(self, session_id: str) -> Optional[float]:
         return self._last_speed.get(session_id)
+
+    def get_dwell_samples(self, session_id: str) -> int:
+        """Samples observed in the current edge, used to temper the ETA estimate."""
+        return self._dwell_samples.get(session_id, 0)
+
+
+def _collapse_repeats(seq: List[str]) -> List[str]:
+    """Collapses consecutive duplicate edges into a single transition step."""
+    collapsed: List[str] = []
+    for edge in seq:
+        if not collapsed or collapsed[-1] != edge:
+            collapsed.append(edge)
+    return collapsed
 
 
 class PredictorEngine:
@@ -100,8 +125,8 @@ class PredictorEngine:
         """Computes next-edge probability distribution for given session_id."""
         now_ms = int(time.time() * 1000)
 
-        # Determine sequence history
-        seq = history or self.session_store.get_history(session_id)
+        # Determine sequence history, collapsing dwell so the shape matches training.
+        seq = _collapse_repeats(history or self.session_store.get_history(session_id))
         if current_edge and (not seq or seq[-1] != current_edge):
             seq = seq + [current_edge]
 
