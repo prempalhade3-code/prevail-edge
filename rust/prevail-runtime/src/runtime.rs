@@ -35,6 +35,7 @@ pub struct PrevailRuntime {
     vehicle_longitude: Option<f64>,
     vehicle_heading: Option<f64>,
     vehicle_speed_mps: Option<f64>,
+    vehicle_updated_ms: Option<i64>,
     /// True when this process is holding a warm shadow for the session.
     is_warm_shadow: bool,
     /// Readiness this process reports as a shadow, measured locally.
@@ -105,6 +106,7 @@ impl PrevailRuntime {
             vehicle_longitude: None,
             vehicle_heading: None,
             vehicle_speed_mps: None,
+            vehicle_updated_ms: None,
             is_warm_shadow: false,
             local_sync_ratio: 0.0,
             sync_lag_records: 0,
@@ -230,6 +232,7 @@ impl PrevailRuntime {
         self.vehicle_longitude = Some(sample.longitude);
         self.vehicle_heading = sample.heading_deg;
         self.vehicle_speed_mps = Some(sample.speed_mps);
+        self.vehicle_updated_ms = Some(now_ms());
         self.vehicle_trail.push(crate::types::VehicleTrailPoint {
             latitude: sample.latitude,
             longitude: sample.longitude,
@@ -788,6 +791,8 @@ impl PrevailRuntime {
         self.vehicle_latitude = Some(sample.latitude);
         self.vehicle_longitude = Some(sample.longitude);
         self.vehicle_heading = sample.heading_deg;
+        self.vehicle_speed_mps = Some(sample.speed_mps);
+        self.vehicle_updated_ms = Some(now_ms());
         self.vehicle_trail.push(crate::types::VehicleTrailPoint {
             latitude: sample.latitude,
             longitude: sample.longitude,
@@ -912,6 +917,7 @@ impl PrevailRuntime {
             vehicle_longitude: self.vehicle_longitude,
             vehicle_heading: self.vehicle_heading,
             vehicle_speed_mps: self.vehicle_speed_mps,
+            vehicle_updated_ms: self.vehicle_updated_ms,
             vehicle_trail: self.vehicle_trail.clone(),
             traffic_vehicles: self.traffic_vehicles.clone(),
             predictor_degraded: self.predictor_degraded,
