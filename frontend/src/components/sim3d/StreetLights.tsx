@@ -86,5 +86,5 @@ export function StreetLights({ roads }: { roads: RoadPolyline[] }) {
   }, [matrices]);
 
   if (!matrices.length) return null;
-  return <instancedMesh ref={mesh} args={[geometry, material, matrices.length]} castShadow />;
+  return <instancedMesh ref={mesh} args={[geometry, material, matrices.length]} />;
 }
