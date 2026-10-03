@@ -1,0 +1,35 @@
+{
+  "edge_ids": [
+    "edge-a",
+    "edge-b",
+    "edge-c",
+    "edge-d"
+  ],
+  "alpha": 0.05,
+  "transitions": {
+    "edge-a": {
+      "edge-a": 0.041667,
+      "edge-b": 0.875,
+      "edge-c": 0.041667,
+      "edge-d": 0.041667
+    },
+    "edge-b": {
+      "edge-a": 0.041667,
+      "edge-b": 0.041667,
+      "edge-c": 0.875,
+      "edge-d": 0.041667
+    },
+    "edge-c": {
+      "edge-a": 0.25,
+      "edge-b": 0.25,
+      "edge-c": 0.25,
+      "edge-d": 0.25
+    },
+    "edge-d": {
+      "edge-a": 0.25,
+      "edge-b": 0.25,
+      "edge-c": 0.25,
+      "edge-d": 0.25
+    }
+  }
+}

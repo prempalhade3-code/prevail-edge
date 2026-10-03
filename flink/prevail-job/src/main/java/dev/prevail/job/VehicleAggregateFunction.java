@@ -57,9 +57,8 @@ public class VehicleAggregateFunction
     public void processElement(TrajectorySample sample, Context ctx, Collector<String> out) throws Exception {
         String prevEdge = currentEdge.value();
         if (prevEdge != null && !prevEdge.equals(sample.edgeId)) {
-            long handoffLatency = computeHandoffLatency();
             handoffCounter.add(1);
-            migrationCounter.add(handoffLatency);
+            // Latency is measured by the Rust runtime (AuthorityTransferred.latency_ms).
         }
         currentEdge.update(sample.edgeId);
 
@@ -73,7 +72,7 @@ public class VehicleAggregateFunction
 
         boolean outputEnabled = true;
         try {
-            SidecarClient.AuthorityState auth = sidecar.getAuthority(sample.sessionId);
+            SidecarClient.AuthorityState auth = sidecar.getAuthorityForEdge(sample.sessionId, sample.edgeId);
             outputEnabled = auth.outputEnabled();
         } catch (Exception ex) {
             outputEnabled = false;
@@ -88,13 +87,4 @@ public class VehicleAggregateFunction
         }
     }
 
-    private long computeHandoffLatency() {
-        if ("baseline".equalsIgnoreCase(mode)) {
-            long saveMs = Long.parseLong(System.getenv().getOrDefault("PREVAIL_BASELINE_SAVE_MS", "120"));
-            long restoreMs = Long.parseLong(System.getenv().getOrDefault("PREVAIL_BASELINE_RESTORE_MS", "350"));
-            long overheadMs = Long.parseLong(System.getenv().getOrDefault("PREVAIL_BASELINE_OVERHEAD_MS", "80"));
-            return saveMs + restoreMs + overheadMs;
-        }
-        return Long.parseLong(System.getenv().getOrDefault("PREVAIL_PROMOTION_MS", "45"));
-    }
 }

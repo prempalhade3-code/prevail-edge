@@ -98,6 +98,32 @@ mod tests {
     }
 
     #[test]
+    fn image_capability_skips_ineligible_edge() {
+        let mut caps = HashMap::new();
+        caps.insert(
+            "edge-d".into(),
+            EdgeCapability {
+                edge_id: "edge-d".into(),
+                supports_stream: true,
+                supports_image: false,
+                supports_gpu: false,
+                cpu_available_ratio: 0.5,
+                memory_available_ratio: 0.5,
+            },
+        );
+        let mut cfg = SpeculationConfig::default();
+        cfg.require_image_capability = true;
+        cfg.min_confidence = 0.10;
+        let d = evaluate_speculation(
+            &pred(&[("edge-d", 0.9)], 20.0),
+            "edge-a",
+            &caps,
+            &cfg,
+        );
+        assert!(!d.should_speculate);
+    }
+
+    #[test]
     fn selects_top_confident_edge() {
         let mut caps = HashMap::new();
         caps.insert(

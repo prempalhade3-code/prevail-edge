@@ -84,30 +84,42 @@ def count_handoffs(samples: List[Dict[str, Any]]) -> int:
 
 
 def simulate_baseline_migration(scenario: Scenario, samples: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Reactive migration baseline — checkpoint save + restore on each handoff."""
-    save_ms = float(scenario.baseline.get("checkpoint_save_ms", 120))
-    restore_ms = float(scenario.baseline.get("checkpoint_restore_ms", 350))
-    overhead_ms = float(scenario.baseline.get("network_overhead_ms", 80))
+    """Prefer measured reactive transfers from the live mesh."""
+    from experiments.metrics import fetch_live_metrics
+
+    live = fetch_live_metrics()
+    if live and live.get("reactive_count", 0) > 0:
+        return {
+            **live,
+            "migration_latency_ms": live["reactive_latency_ms"],
+            "samples_processed": float(len(samples)),
+            "metric_source": "live_reactive",
+        }
     handoffs = count_handoffs(samples)
-    per_handoff = save_ms + restore_ms + overhead_ms
     return {
-        "migration_latency_ms": per_handoff * max(handoffs, 1),
+        "migration_latency_ms": 0.0,
         "samples_processed": float(len(samples)),
         "handoff_count": float(handoffs),
-        "gated_output_count": 0.0,
+        "metric_source": "unavailable",
+        "live_runtime": 0.0,
     }
 
 
 def simulate_prevail_path(scenario: Scenario, samples: List[Dict[str, Any]]) -> Dict[str, float]:
-    """PREVAIL path — warm shadow promotion assumed ready (demo thresholds)."""
-    handoffs = count_handoffs(samples)
-    # Demo promotion latency when shadow sync >= 0.95 (much lower than baseline restore)
-    promotion_ms = 45.0
+    """PREVAIL path — live timeline only. Never invent 45 ms."""
+    from experiments.metrics import fetch_live_metrics
+
+    live = fetch_live_metrics()
+    if live is not None:
+        live["samples_processed"] = float(len(samples))
+        live["metric_source"] = "live_timeline"
+        return live
     return {
-        "migration_latency_ms": promotion_ms * max(handoffs, 1),
+        "migration_latency_ms": 0.0,
         "samples_processed": float(len(samples)),
-        "handoff_count": float(handoffs),
-        "gated_output_count": float(len(samples)),  # all samples gated through sidecar in Flink job
+        "handoff_count": 0.0,
+        "metric_source": "unavailable",
+        "live_runtime": 0.0,
     }
 
 
@@ -145,6 +157,34 @@ def persist_to_postgres(run_id: str, scenario: Scenario, metrics: Dict[str, floa
     db_url = os.environ.get("PREVAIL_DATABASE_URL")
     if not db_url:
         return
+    numeric = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+    if "sqlite" in db_url or db_url.endswith(".db"):
+        import sqlite3
+
+        path = db_url.replace("sqlite:///", "").replace("sqlite://", "")
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO runs (run_id, scenario_id, mode, status)
+                VALUES (?, ?, ?, 'completed')
+                ON CONFLICT(run_id) DO UPDATE SET status = 'completed'
+                """,
+                (run_id, scenario.id, scenario.mode),
+            )
+            ts = int(time.time() * 1000)
+            for name, value in numeric.items():
+                conn.execute(
+                    """
+                    INSERT INTO metric_samples (run_id, metric_name, value, edge_id, timestamp_ms, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (run_id, name, value, scenario.id, ts, json.dumps({"mode": scenario.mode})),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return
     try:
         import psycopg2
     except ImportError:
@@ -163,7 +203,7 @@ def persist_to_postgres(run_id: str, scenario: Scenario, metrics: Dict[str, floa
                 (run_id, scenario.id, scenario.mode),
             )
             ts = int(time.time() * 1000)
-            for name, value in metrics.items():
+            for name, value in numeric.items():
                 cur.execute(
                     """
                     INSERT INTO metric_samples (run_id, metric_name, value, edge_id, timestamp_ms, metadata)

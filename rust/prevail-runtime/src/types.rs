@@ -144,13 +144,27 @@ pub struct SpeculationConfig {
 
 impl Default for SpeculationConfig {
     fn default() -> Self {
+        let max_shadows = std::env::var("PREVAIL_SPECULATION_MAX_SHADOWS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        let min_confidence = std::env::var("PREVAIL_SPECULATION_MIN_CONFIDENCE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.60);
+        let require_image = std::env::var("PREVAIL_REQUIRE_IMAGE_CAPABILITY")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
-            max_shadows: 1,
-            min_confidence: 0.30,
-            promotion_sync_threshold: 0.95,
+            max_shadows,
+            min_confidence,
+            promotion_sync_threshold: std::env::var("PREVAIL_PROMOTION_SYNC_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.95),
             promotion_margin_sec: 2.0,
             estimated_sync_sec: 5.0,
-            require_image_capability: false,
+            require_image_capability: require_image,
         }
     }
 }

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 import uuid
@@ -15,6 +16,7 @@ from typing import Any, Dict, List
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from experiments.metrics import fetch_live_metrics, fetch_live_snapshot  # noqa: E402
 from experiments.runner import (  # noqa: E402
     RESULTS_DIR,
     Scenario,
@@ -29,7 +31,7 @@ from experiments.runner import (  # noqa: E402
 
 
 def sweep_e1(scenario: Scenario, samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E1: baseline vs PREVAIL p50/p95 migration latency."""
+    """E1: measured reactive fallback vs warm promotion from the live timeline."""
     baseline = simulate_baseline_migration(scenario, samples)
     prevail = simulate_prevail_path(scenario, samples)
     return [
@@ -39,67 +41,103 @@ def sweep_e1(scenario: Scenario, samples: List[Dict[str, Any]]) -> List[Dict[str
 
 
 def sweep_e2(scenario: Scenario, samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E2: break-even accuracy vs migration savings."""
-    results = []
-    for accuracy in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
-        baseline_ms = simulate_baseline_migration(scenario, samples)["migration_latency_ms"]
-        prevail_ms = simulate_prevail_path(scenario, samples)["migration_latency_ms"]
-        effective_prevail = prevail_ms + (1.0 - accuracy) * baseline_ms * 0.5
-        savings = baseline_ms - effective_prevail
-        results.append({
+    """E2: break-even using measured accuracy and latencies (no assumed accuracy grid)."""
+    live = fetch_live_metrics() or {}
+    baseline_ms = live.get("reactive_latency_ms") or 0.0
+    prevail_ms = live.get("warm_latency_ms") or live.get("migration_latency_ms") or 0.0
+    accuracy = live.get("prediction_accuracy")
+    if accuracy is None:
+        return [{
             "experiment": "E2",
-            "prediction_accuracy": accuracy,
-            "baseline_ms": baseline_ms,
-            "prevail_ms": effective_prevail,
-            "savings_ms": savings,
-            "break_even": savings > 0,
-        })
-    return results
+            "metric_source": "unavailable",
+            "prediction_accuracy": 0.0,
+            "baseline_ms": 0.0,
+            "prevail_ms": 0.0,
+            "savings_ms": 0.0,
+            "break_even": 0.0,
+        }]
+    savings = baseline_ms - prevail_ms
+    return [{
+        "experiment": "E2",
+        "metric_source": "live_timeline",
+        "prediction_accuracy": accuracy,
+        "baseline_ms": baseline_ms,
+        "prevail_ms": prevail_ms,
+        "savings_ms": savings,
+        "break_even": 1.0 if savings > 0 else 0.0,
+        "handoff_count": live.get("handoff_count", 0.0),
+        "samples_processed": float(len(samples)),
+    }]
 
 
 def sweep_e3(_scenario: Scenario, _samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E3: shadow budget sweep."""
-    return [
-        {"experiment": "E3", "max_shadows": n, "overhead_ms_per_shadow": 12.0 * n}
-        for n in [1, 2, 3, 4]
-    ]
+    """E3: observed shadow budget from the live run."""
+    live = fetch_live_metrics() or {}
+    max_shadows = float(os.environ.get("PREVAIL_SPECULATION_MAX_SHADOWS", "1"))
+    return [{
+        "experiment": "E3",
+        "metric_source": "live_timeline" if live.get("live_runtime") else "unavailable",
+        "max_shadows": max_shadows,
+        "shadows_created": live.get("shadows_created", 0.0),
+        "average_sync_ratio": live.get("average_sync_ratio", 0.0),
+    }]
 
 
 def sweep_e4(_scenario: Scenario, _samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E4: promotion threshold sweep."""
-    return [
-        {
-            "experiment": "E4",
-            "promotion_sync_threshold": t,
-            "promotion_rate": min(1.0, t * 1.05),
-            "discard_rate": max(0.0, 1.0 - t),
-        }
-        for t in [0.7, 0.8, 0.85, 0.9, 0.95, 0.99]
-    ]
+    """E4: observed promotion vs fallback rate at the configured threshold."""
+    live = fetch_live_metrics() or {}
+    threshold = float(os.environ.get("PREVAIL_PROMOTION_SYNC_THRESHOLD", "0.95"))
+    warm = live.get("warm_count", 0.0)
+    reactive = live.get("reactive_count", 0.0)
+    total = warm + reactive
+    return [{
+        "experiment": "E4",
+        "metric_source": "live_timeline" if live.get("live_runtime") else "unavailable",
+        "promotion_sync_threshold": threshold,
+        "promotion_rate": (warm / total) if total else 0.0,
+        "discard_rate": (reactive / total) if total else 0.0,
+        "warm_count": warm,
+        "reactive_count": reactive,
+    }]
 
 
 def sweep_e5(_scenario: Scenario, _samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E5: lead time vs ETA gate."""
-    return [
-        {
+    """E5: live predictor ETA versus the speculation lead-time gate."""
+    snap = fetch_live_snapshot() or {}
+    eta = (snap.get("prediction") or {}).get("eta_sec")
+    sync = float(os.environ.get("PREVAIL_ESTIMATED_SYNC_SEC", "5"))
+    margin = float(os.environ.get("PREVAIL_PROMOTION_MARGIN_SEC", "2"))
+    if eta is None:
+        return [{
             "experiment": "E5",
-            "eta_sec": eta,
+            "metric_source": "unavailable",
+            "eta_sec": 0.0,
             "estimated_sync_sec": sync,
             "promotion_margin_sec": margin,
-            "gate_passes": eta >= sync + margin,
-        }
-        for eta, sync, margin in [(14, 5, 2), (10, 5, 2), (8, 5, 2), (14, 8, 2), (14, 5, 4)]
-    ]
+            "gate_passes": 0.0,
+        }]
+    return [{
+        "experiment": "E5",
+        "metric_source": "live_prediction",
+        "eta_sec": float(eta),
+        "estimated_sync_sec": sync,
+        "promotion_margin_sec": margin,
+        "gate_passes": 1.0 if float(eta) >= sync + margin else 0.0,
+    }]
 
 
 def sweep_e6(scenario: Scenario, samples: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-    """E6: failure injection recovery estimates."""
-    handoffs = count_handoffs(samples)
-    return [
-        {"experiment": "E6", "fault": "kill_authoritative", "recovery_ms": 180.0, "handoffs": handoffs},
-        {"experiment": "E6", "fault": "kill_shadow", "recovery_ms": 45.0, "handoffs": handoffs},
-        {"experiment": "E6", "fault": "network_partition", "recovery_ms": 320.0, "handoffs": handoffs},
-    ]
+    """E6: observed fallback/wrong-prediction counts. Does not invent recovery times."""
+    live = fetch_live_metrics() or {}
+    return [{
+        "experiment": "E6",
+        "metric_source": "live_timeline" if live.get("live_runtime") else "unavailable",
+        "handoffs": live.get("handoff_count", float(count_handoffs(samples))),
+        "wrong_prediction_count": live.get("wrong_prediction_count", 0.0),
+        "reactive_count": live.get("reactive_count", 0.0),
+        "warm_count": live.get("warm_count", 0.0),
+        "scenario_id": 0.0,
+    }]
 
 
 SWEEPS = {

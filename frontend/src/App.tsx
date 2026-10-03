@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { SimulationViewport } from "./components/sim3d/SimulationViewport";
 import { MinimapPanel } from "./components/MinimapPanel";
+import { PredictionPanel } from "./components/PredictionPanel";
+import { ShadowPanel } from "./components/ShadowPanel";
+import { TimelinePanel } from "./components/TimelinePanel";
+import { CurrentNodePanel } from "./components/CurrentNodePanel";
+import { ComparisonCharts } from "./components/ComparisonCharts";
 import { useLiveSnapshot } from "./hooks/useLiveSnapshot";
 import { CAMERA_LABEL, CAMERA_MODES, type CameraMode } from "./components/sim3d/CameraRig";
 
@@ -24,6 +29,7 @@ function Row({
 export default function App() {
   const { snapshot, connected } = useLiveSnapshot();
   const [cameraMode, setCameraMode] = useState<CameraMode>("chase");
+  const [showResearch, setShowResearch] = useState<boolean>(true);
 
   const topPred = useMemo(() => {
     if (!snapshot?.prediction?.probabilities) return null;
@@ -129,12 +135,39 @@ export default function App() {
               {CAMERA_LABEL[mode]}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowResearch(!showResearch)}
+            className={`px-2.5 py-1 text-[10px] uppercase tracking-wide rounded-full border ${
+              showResearch
+                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                : "bg-black/40 text-white/50 border-white/10 hover:text-white/80"
+            }`}
+          >
+            {showResearch ? "Hide Research" : "Research UI"}
+          </button>
         </div>
       </aside>
 
       <div className="absolute top-5 right-5 z-20 w-[min(340px,32vw)]">
         <MinimapPanel snapshot={snapshot} />
       </div>
+
+      {showResearch && (
+        <div className="absolute top-5 right-[min(360px,34vw)] z-20 w-[320px] max-h-[calc(100vh-40px)] overflow-y-auto space-y-3 pointer-events-auto">
+          {snapshot && snapshot.authority && (
+            <CurrentNodePanel edgeId={snapshot.current_edge_id} authority={snapshot.authority} />
+          )}
+          <ComparisonCharts snapshot={snapshot} />
+          <PredictionPanel
+            prediction={snapshot?.prediction ?? null}
+            currentEdge={snapshot?.current_edge_id ?? "edge-a"}
+            degraded={snapshot?.predictor_degraded}
+          />
+          <ShadowPanel shadows={snapshot?.shadows ?? []} />
+          <TimelinePanel events={snapshot?.timeline ?? []} />
+        </div>
+      )}
     </div>
   );
 }

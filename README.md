@@ -93,9 +93,9 @@ PREVAIL_INTEGRATION_TESTS=1 PYTHONPATH=. python -m unittest tests/integration/te
 | Stream processing | Apache Flink (file + live socket, standalone fat jar) |
 | Prediction | Python FastAPI, PyTorch GRU |
 | Mobility | GeoJSON corridor, IDM traffic, SUMO configs |
-| Visualization | React Three Fiber city (Kenney CC0 + Three.js Ferrari), OSM roads, Leaflet map |
-| Observability | FastAPI aggregator, PostgreSQL timeline (optional) |
+| Visualization | React Three Fiber metro (OSM roads, procedural buildings, Ferrari + Kenney traffic), Leaflet tactical map |
+| Observability | FastAPI aggregator, PostgreSQL or SQLite timeline |
 
 ## License
 
-To be decided by the team.
+MIT. See [LICENSE](LICENSE).

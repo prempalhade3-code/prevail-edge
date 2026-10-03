@@ -8,7 +8,7 @@
  *
  * Every colour and visibility flag is read from the live PrevailView.
  */
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import {
@@ -17,7 +17,6 @@ import {
   type Group,
   type Mesh,
   type MeshStandardMaterial,
-  Vector3,
 } from "three";
 import type { EdgeRegionGeo } from "../../lib/cityScene";
 import type { Pose, PrevailView } from "../../lib/liveStore";
@@ -87,19 +86,21 @@ function Gate({
   const wash = useRef<MeshStandardMaterial>(null);
   const sync = useRef<Mesh>(null);
   const label = useRef<Group>(null);
-  const roleRef = useRef<EdgeRole>("idle");
+  const [role, setRole] = useState<EdgeRole>("idle");
 
   useFrame(({ camera }) => {
-    const role = roleOf(view.current, region.edge_id);
-    roleRef.current = role;
-    const colour = ROLE_COLOR[role];
+    const r = roleOf(view.current, region.edge_id);
+    if (r !== role) {
+      setRole(r);
+    }
+    const colour = ROLE_COLOR[r];
     if (wash.current) {
       wash.current.color.set(colour);
-      wash.current.opacity = role === "authoritative" ? 0.1 : role === "idle" ? 0.02 : 0.07;
+      wash.current.opacity = r === "authoritative" ? 0.1 : r === "idle" ? 0.02 : 0.07;
     }
     if (sync.current) {
       const ratio = syncRatioOf(view.current, region.edge_id);
-      const showing = role === "shadow";
+      const showing = r === "shadow";
       sync.current.visible = showing;
       if (showing) {
         sync.current.scale.y = Math.max(0.04, ratio);
@@ -111,7 +112,7 @@ function Gate({
 
   return (
     <group ref={root} position={[gate[0], 0, gate[1]]}>
-      <RoadsideCabinet role="idle" />
+      <RoadsideCabinet role={role} />
       <mesh ref={sync} position={[-1.3, 0.2, 0]} visible={false}>
         <boxGeometry args={[0.18, 3.2, 0.18]} />
         <meshStandardMaterial

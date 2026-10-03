@@ -1,0 +1,16 @@
+# Image-capability filter: edge-d lacks supports_image.
+# Run with PREVAIL_REQUIRE_IMAGE_CAPABILITY=true so speculation skips edge-d.
+id: image-capability
+description: Workload requires image capability; edge-d must not receive a shadow
+stream_file: sim/fixtures/sample-trajectory.jsonl
+session_id: sim-vehicle-01
+mode: prevail
+repeats: 1
+expected_handoffs:
+  - from: edge-a
+    to: edge-b
+  - from: edge-b
+    to: edge-c
+metrics:
+  - shadows_created
+  - wrong_prediction_count
