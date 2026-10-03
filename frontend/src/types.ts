@@ -53,6 +53,7 @@ export interface SystemSnapshot {
   vehicle_longitude?: number;
   vehicle_heading?: number;
   vehicle_speed_mps?: number;
+  vehicle_updated_ms?: number;
   vehicle_trail?: { latitude: number; longitude: number }[];
   traffic_vehicles?: {
     vehicle_id: string;
