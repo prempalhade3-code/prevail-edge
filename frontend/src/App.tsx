@@ -9,27 +9,10 @@ import { ComparisonCharts } from "./components/ComparisonCharts";
 import { useLiveSnapshot } from "./hooks/useLiveSnapshot";
 import { CAMERA_LABEL, CAMERA_MODES, type CameraMode } from "./components/sim3d/CameraRig";
 
-function Row({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5 border-b border-white/8">
-      <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">{label}</span>
-      <span className={`text-[13px] font-mono ${accent ?? "text-white/88"}`}>{value}</span>
-    </div>
-  );
-}
-
 export default function App() {
-  const { snapshot, connected } = useLiveSnapshot();
+  const { snapshot, snapshotRef, connected } = useLiveSnapshot();
   const [cameraMode, setCameraMode] = useState<CameraMode>("chase");
-  const [showResearch, setShowResearch] = useState<boolean>(true);
+  const [showResearch, setShowResearch] = useState(false);
 
   const topPred = useMemo(() => {
     if (!snapshot?.prediction?.probabilities) return null;
@@ -41,95 +24,96 @@ export default function App() {
   }, [snapshot?.prediction, snapshot?.current_edge_id]);
 
   const topShadow = snapshot?.shadows?.[0];
-  const handoffState = snapshot?.timeline
+  const speedKmh = Math.round((snapshot?.vehicle_speed_mps ?? 0) * 3.6);
+  const sync = Math.round((topShadow?.sync_ratio ?? 0) * 100);
+  const eta = snapshot?.prediction?.eta_sec;
+
+  const handoff = snapshot?.timeline
     ?.slice()
     .reverse()
     .find((e) =>
       ["AuthorityTransferred", "EdgePromoted", "MigrationFallback", "ShadowCreated"].includes(e.event_type),
     );
-
   const handoffLabel =
-    handoffState?.event_type === "EdgePromoted"
+    handoff?.event_type === "EdgePromoted"
       ? "Warm promotion"
-      : handoffState?.event_type === "MigrationFallback"
+      : handoff?.event_type === "MigrationFallback"
         ? "Reactive fallback"
-        : handoffState?.event_type === "ShadowCreated"
-          ? "Shadow preparing"
-          : handoffState?.event_type === "AuthorityTransferred"
+        : handoff?.event_type === "ShadowCreated"
+          ? "Shadow warming"
+          : handoff?.event_type === "AuthorityTransferred"
             ? "Handoff complete"
-            : "—";
-
-  const speed = snapshot?.vehicle_speed_mps ?? 0;
-  const sync = topShadow?.sync_ratio ?? 0;
+            : "Cruising";
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-black relative">
+    <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-white">
       <div className="absolute inset-0">
-        <SimulationViewport snapshot={snapshot} cameraMode={cameraMode} />
+        <SimulationViewport snapshotRef={snapshotRef} cameraMode={cameraMode} />
       </div>
 
-      <aside className="absolute top-5 left-5 z-20 w-[280px] pointer-events-auto">
-        <div className="bg-black/58 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-4 shadow-2xl">
-          <div className="flex items-center justify-between mb-3">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
+
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 pt-5">
+        <div className="flex items-center gap-3">
+          <div className="rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 backdrop-blur-xl">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/45">Prevail</div>
+          </div>
+          <span
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+              connected
+                ? "border-emerald-400/30 bg-emerald-400/15 text-emerald-300"
+                : "border-white/10 bg-zinc-950/70 text-white/40"
+            }`}
+          >
+            {connected ? "Live" : "Link"}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Chip label="Edge" value={snapshot?.current_edge_id ?? "—"} tone="emerald" />
+          <Chip label="Next" value={topPred ? `${topPred[0]} ${Math.round(topPred[1] * 100)}%` : "—"} tone="sky" />
+          <Chip label="Shadow" value={topShadow ? `${sync}%` : "—"} tone="amber" />
+        </div>
+      </header>
+
+      <aside className="pointer-events-none absolute bottom-6 left-6 z-20 w-[300px]">
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/70 p-5 shadow-2xl backdrop-blur-xl">
+          <div className="flex items-end justify-between">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.22em] text-white/40">PREVAIL</div>
-              <div className="text-lg font-semibold tracking-wide text-white/90">Mission</div>
+              <div className="font-mono text-[56px] font-semibold leading-none tracking-tight">
+                {speedKmh}
+                <span className="ml-1 align-super text-sm font-medium text-white/35">km/h</span>
+              </div>
+              <div className="mt-2 font-mono text-[11px] text-white/40">
+                {snapshot?.vehicle_latitude?.toFixed(5) ?? "—"} · {snapshot?.vehicle_longitude?.toFixed(5) ?? "—"}
+              </div>
             </div>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wide ${
-                connected
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                  : "bg-white/10 text-white/45 border border-white/10"
-              }`}
-            >
-              {connected ? "Live" : "Link"}
-            </span>
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-white/35">Handoff</div>
+              <div className="mt-1 text-sm text-white/80">{handoffLabel}</div>
+              <div className="mt-1 text-xs text-amber-300/90">{eta != null ? `ETA ${eta.toFixed(0)}s` : "—"}</div>
+            </div>
           </div>
-
-          <div className="text-[28px] leading-none font-semibold font-mono text-white mb-1">
-            {Math.round(speed * 3.6)}
-            <span className="text-sm text-white/40 ml-1">km/h</span>
+          <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full bg-gradient-to-r from-amber-300 to-emerald-300" style={{ width: `${sync}%` }} />
           </div>
-          <div className="text-[11px] font-mono text-white/45 mb-3">
-            {snapshot?.vehicle_latitude?.toFixed(5) ?? "—"}, {snapshot?.vehicle_longitude?.toFixed(5) ?? "—"}
-          </div>
-
-          <Row label="Current edge" value={snapshot?.current_edge_id ?? "—"} accent="text-emerald-300" />
-          <Row label="Authority" value={snapshot?.authority?.holder_edge_id ?? "—"} accent="text-emerald-200" />
-          <Row
-            label="Predicted next"
-            value={topPred ? `${topPred[0]}  ${(topPred[1] * 100).toFixed(0)}%` : "—"}
-            accent="text-sky-300"
-          />
-          <Row label="ETA" value={snapshot?.prediction?.eta_sec ? `${snapshot.prediction.eta_sec.toFixed(0)}s` : "—"} />
-          <Row
-            label="Shadow"
-            value={topShadow ? `${topShadow.edge_id}  ${(sync * 100).toFixed(0)}%` : "—"}
-            accent="text-amber-300"
-          />
-          <Row label="Handoff" value={handoffLabel} />
-
-          <div className="mt-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full bg-amber-400/80"
-              style={{ width: `${Math.round(sync * 100)}%` }}
-            />
-          </div>
-          <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-white/35">
-            Vehicle → {snapshot?.current_edge_id ?? "edge"} → {topPred?.[0] ?? "next"} → shadow → handoff
+          <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-white/35">
+            <span>{snapshot?.authority?.holder_edge_id ?? "edge"}</span>
+            <span>→</span>
+            <span>{topPred?.[0] ?? "next"}</span>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-1">
+        <div className="pointer-events-auto mt-3 flex flex-wrap gap-1.5">
           {CAMERA_MODES.map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => setCameraMode(mode)}
-              className={`px-2.5 py-1 text-[10px] uppercase tracking-wide rounded-full border ${
+              className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition ${
                 cameraMode === mode
-                  ? "bg-white/15 text-white border-white/25"
-                  : "bg-black/40 text-white/50 border-white/10 hover:text-white/80"
+                  ? "border-white/30 bg-white text-zinc-950"
+                  : "border-white/10 bg-zinc-950/60 text-white/55 hover:text-white"
               }`}
             >
               {CAMERA_LABEL[mode]}
@@ -137,25 +121,25 @@ export default function App() {
           ))}
           <button
             type="button"
-            onClick={() => setShowResearch(!showResearch)}
-            className={`px-2.5 py-1 text-[10px] uppercase tracking-wide rounded-full border ${
+            onClick={() => setShowResearch((v) => !v)}
+            className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${
               showResearch
-                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                : "bg-black/40 text-white/50 border-white/10 hover:text-white/80"
+                ? "border-amber-400/40 bg-amber-400/15 text-amber-200"
+                : "border-white/10 bg-zinc-950/60 text-white/55 hover:text-white"
             }`}
           >
-            {showResearch ? "Hide Research" : "Research UI"}
+            {showResearch ? "Close lab" : "Lab"}
           </button>
         </div>
       </aside>
 
-      <div className="absolute top-5 right-5 z-20 w-[min(340px,32vw)]">
+      <div className="pointer-events-none absolute bottom-6 right-6 z-20 w-[280px]">
         <MinimapPanel snapshot={snapshot} />
       </div>
 
       {showResearch && (
-        <div className="absolute top-5 right-[min(360px,34vw)] z-20 w-[320px] max-h-[calc(100vh-40px)] overflow-y-auto space-y-3 pointer-events-auto">
-          {snapshot && snapshot.authority && (
+        <div className="absolute bottom-6 right-[312px] top-20 z-20 w-[340px] space-y-3 overflow-y-auto pr-1">
+          {snapshot?.authority && (
             <CurrentNodePanel edgeId={snapshot.current_edge_id} authority={snapshot.authority} />
           )}
           <ComparisonCharts snapshot={snapshot} />
@@ -168,6 +152,28 @@ export default function App() {
           <TimelinePanel events={snapshot?.timeline ?? []} />
         </div>
       )}
+    </div>
+  );
+}
+
+function Chip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "emerald" | "sky" | "amber";
+}) {
+  const tones = {
+    emerald: "text-emerald-300",
+    sky: "text-sky-300",
+    amber: "text-amber-300",
+  };
+  return (
+    <div className="rounded-full border border-white/10 bg-zinc-950/70 px-3 py-1.5 backdrop-blur-xl">
+      <span className="mr-2 text-[10px] uppercase tracking-[0.16em] text-white/35">{label}</span>
+      <span className={`font-mono text-[11px] ${tones[tone]}`}>{value}</span>
     </div>
   );
 }
