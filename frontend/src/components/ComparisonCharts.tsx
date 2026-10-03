@@ -54,7 +54,7 @@ export function ComparisonCharts({ snapshot }: { snapshot: SystemSnapshot | null
       : null;
 
   return (
-    <div className="bg-black/58 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl">
+    <div className="hud-panel p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs uppercase tracking-[0.18em] text-white/50 font-semibold">
           Measured handoff latency
