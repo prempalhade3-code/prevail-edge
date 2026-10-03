@@ -1,5 +1,5 @@
 use crate::runtime::SharedRuntime;
-use crate::types::{SystemSnapshot, TrafficVehicle, TrajectorySample};
+use crate::types::{ShadowRole, SystemSnapshot, TrafficVehicle, TrajectorySample};
 use axum::{
     extract::{State, ws::{Message, WebSocket, WebSocketUpgrade}, Query},
     response::IntoResponse,
@@ -57,11 +57,18 @@ async fn topology(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn current_node(State(state): State<AppState>) -> impl IntoResponse {
     let rt = state.runtime.read().await;
+    let role = match rt.local_role() {
+        ShadowRole::Authoritative => "AUTHORITATIVE",
+        ShadowRole::WarmShadow => "WARM_SHADOW",
+        ShadowRole::Idle => "IDLE",
+    };
     Json(serde_json::json!({
         "edge_id": rt.snapshot().current_edge_id,
-        "role": "AUTHORITATIVE",
+        "local_edge_id": rt.local_edge_id(),
+        "role": role,
         "authority_holder": rt.snapshot().authority.holder_edge_id,
         "epoch": rt.snapshot().authority.epoch,
+        "output_suppressed": rt.output_suppressed(),
     }))
 }
 
@@ -142,17 +149,13 @@ async fn ws_live(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl In
     ws.on_upgrade(move |socket| live_socket(socket, state))
 }
 
+/// Streams snapshots to one client.
+///
+/// Read-only on purpose: advancing simulation state here would make the system
+/// run faster the more dashboards were open. Warm-up and reporting are driven
+/// by the runtime's own mesh tick.
 async fn live_socket(mut socket: WebSocket, state: AppState) {
-    let mut tick = 0u64;
     loop {
-        tick += 1;
-        if tick % 5 == 0 {
-            let mut rt = state.runtime.write().await;
-            rt.tick_shadow_sync();
-            if tick == 10 {
-                rt.run_speculation_cycle().await;
-            }
-        }
         let snap = {
             let rt = state.runtime.read().await;
             rt.snapshot()
