@@ -82,11 +82,15 @@ async fn events(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let rt = state.runtime.read().await;
+    let snapshot = rt.snapshot();
+    // Probes every peer over QUIC, so it must be awaited before serialising.
+    let peer_health = rt.peer_health().await;
     Json(serde_json::json!({
-        "transition_count": rt.snapshot().timeline.iter().filter(|e| e.event_type == "AuthorityTransferred").count(),
-        "shadow_count": rt.snapshot().shadows.len(),
-        "mode": rt.snapshot().mode,
-        "peer_health": rt.peer_health(),
+        "transition_count": snapshot.timeline.iter().filter(|e| e.event_type == "AuthorityTransferred").count(),
+        "shadow_count": snapshot.shadows.len(),
+        "mode": snapshot.mode,
+        "transport": rt.transport_kind(),
+        "peer_health": peer_health,
     }))
 }
 
