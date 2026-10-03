@@ -49,6 +49,13 @@ impl ShadowManager {
         }
     }
 
+    /// Records a readiness value measured and reported by the shadow itself.
+    pub fn set_sync(&mut self, edge_id: &str, ratio: f64) {
+        if let Some(s) = self.shadows.iter_mut().find(|s| s.edge_id == edge_id) {
+            s.sync_ratio = ratio.clamp(0.0, 1.0);
+        }
+    }
+
     pub fn ready_for_promotion(&self, edge_id: &str, threshold: f64) -> Result<(), ShadowError> {
         let s = self
             .shadows
