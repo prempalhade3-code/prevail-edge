@@ -130,7 +130,6 @@ function TreeFleet({
     <instancedMesh
       ref={mesh}
       args={[geometry, material, Math.max(items.length, 1)]}
-      castShadow
       frustumCulled={false}
     />
   );
