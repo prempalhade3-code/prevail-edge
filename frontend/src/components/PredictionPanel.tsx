@@ -1,4 +1,3 @@
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { PredictionResult } from "../types";
 
 export function PredictionPanel({
@@ -11,11 +10,7 @@ export function PredictionPanel({
   degraded?: boolean;
 }) {
   if (!prediction) {
-    return (
-      <div className="rounded-lg bg-prevail-panel p-4 border border-slate-700 text-slate-400">
-        Waiting for predictor…
-      </div>
-    );
+    return <div className="hud-panel p-4 text-sm text-white/45">Waiting for predictor…</div>;
   }
 
   const data = Object.entries(prediction.probabilities)
@@ -24,35 +19,30 @@ export function PredictionPanel({
     .sort((a, b) => b.pct - a.pct);
 
   return (
-    <div className="rounded-lg bg-prevail-panel p-4 border border-slate-700">
-      <h2 className="text-sm font-semibold text-slate-300 mb-2">Next edge prediction</h2>
+    <div className="hud-panel p-4">
+      <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Next edge</h2>
       {degraded && (
-        <p className="text-xs text-amber-400 mb-2 border border-amber-600/40 rounded px-2 py-1">
-          Predictor unavailable — showing explicit degraded fallback
+        <p className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-200">
+          Predictor degraded — fallback ranking
         </p>
       )}
-      <ul className="space-y-1 mb-3">
+      <ul className="space-y-2">
         {data.map((d) => (
-          <li key={d.edge} className="flex justify-between text-sm">
-            <span>{d.edge}</span>
-            <span className="font-mono text-prevail-accent">{d.pct}%</span>
+          <li key={d.edge}>
+            <div className="mb-1 flex justify-between font-mono text-xs">
+              <span>{d.edge}</span>
+              <span className="text-sky-300">{d.pct}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full bg-sky-400" style={{ width: `${d.pct}%` }} />
+            </div>
           </li>
         ))}
       </ul>
       {prediction.eta_sec != null && (
-        <p className="text-xs text-slate-400 mb-2">ETA: ~{prediction.eta_sec.toFixed(0)} seconds</p>
+        <p className="mt-3 text-xs text-white/45">ETA ~{prediction.eta_sec.toFixed(0)}s</p>
       )}
-      <p className="text-xs text-slate-500">Model: {prediction.model_version}</p>
-      <div className="h-32 mt-3">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
-            <XAxis dataKey="edge" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <Tooltip />
-            <Bar dataKey="pct" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-white/30">{prediction.model_version}</p>
     </div>
   );
 }
