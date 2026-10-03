@@ -11,12 +11,14 @@ rsync -a --exclude node_modules --exclude dist "$ROOT/frontend/" "$TMP/"
 echo "[build-ui] npm install + vite build"
 cd "$TMP"
 npm install --prefer-offline --silent
+npx tsc --noEmit
 node node_modules/vite/bin/vite.js build
 
 echo "[build-ui] Copying dist -> frontend/dist"
 rsync -a dist/ "$ROOT/frontend/dist/"
-mkdir -p "$ROOT/frontend/dist/sim/network"
-cp "$ROOT/frontend/public/sim/network/bangalore-corridor.geojson" \
-  "$ROOT/frontend/dist/sim/network/" 2>/dev/null || true
+mkdir -p "$ROOT/frontend/dist/sim/network" "$ROOT/frontend/dist/city"
+cp "$ROOT/sim/network/bangalore-corridor.geojson" "$ROOT/frontend/dist/sim/network/"
+cp "$ROOT/sim/network/city-roads.geojson" "$ROOT/frontend/dist/city/roads.geojson"
+cp "$ROOT/frontend/public/city/scene.json" "$ROOT/frontend/dist/city/scene.json"
 
-echo "[build-ui] Done. Restart backend (T2) if it was already running."
+echo "[build-ui] Done."
