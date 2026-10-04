@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-10-04T15:04:40.443823+05:30 by Eclipse SUMO sumo 1.27.1
+<sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="/Users/prempalhade/Documents/Codex/2026-08-21/i-have-attached-the-finalized-implementation/iista-prototype/prevail/sim/sumo/corridor.net.xml"/>
+        <route-files value="/Users/prempalhade/Documents/Codex/2026-08-21/i-have-attached-the-finalized-implementation/iista-prototype/prevail/sim/sumo/corridor.rou.xml"/>
+    </input>
+
+    <output>
+        <fcd-output value="/Users/prempalhade/Documents/Codex/2026-08-21/i-have-attached-the-finalized-implementation/iista-prototype/prevail/sim/sumo/../fixtures/sumo-fcd.jsonl"/>
+        <fcd-output.geo value="true"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+        <step-length value="0.2"/>
+    </time>
+
+    <processing>
+        <collision.action value="warn"/>
+        <time-to-teleport value="-1"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <gui_only>
+        <quit-on-end value="true"/>
+        <start value="true"/>
+    </gui_only>
+
+</sumoConfiguration>

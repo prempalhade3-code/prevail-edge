@@ -1,5 +1,5 @@
-{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700000000, "latitude": 12.9716, "longitude": 77.5946, "speed_mps": 10.0, "edge_id": "edge-a", "heading_deg": 45.0}
-{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700002000, "latitude": 12.9720, "longitude": 77.5950, "speed_mps": 12.0, "edge_id": "edge-a", "heading_deg": 45.0}
-{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700004000, "latitude": 12.9745, "longitude": 77.6045, "speed_mps": 14.0, "edge_id": "edge-b", "heading_deg": 60.0}
-{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700006000, "latitude": 12.9750, "longitude": 77.6050, "speed_mps": 15.0, "edge_id": "edge-b", "heading_deg": 60.0}
-{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700008000, "latitude": 12.9650, "longitude": 77.6100, "speed_mps": 11.0, "edge_id": "edge-c", "heading_deg": 135.0}
+{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700000000, "latitude": 12.920709, "longitude": 77.663605, "speed_mps": 10.0, "edge_id": "edge-a", "heading_deg": 62.0, "sensor_tuple": "{\"accel\":0.1,\"gyro\":0.0}", "workload_class": "stream"}
+{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700002000, "latitude": 12.922500, "longitude": 77.668000, "speed_mps": 12.0, "edge_id": "edge-a", "heading_deg": 62.0, "sensor_tuple": "{\"accel\":0.2,\"gyro\":0.1}", "workload_class": "stream"}
+{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700004000, "latitude": 12.928155, "longitude": 77.681794, "speed_mps": 14.0, "edge_id": "edge-b", "heading_deg": 55.0, "sensor_tuple": "{\"accel\":0.15}", "image_event_id": "img-b1", "workload_class": "stream"}
+{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700006000, "latitude": 12.930000, "longitude": 77.685000, "speed_mps": 15.0, "edge_id": "edge-b", "heading_deg": 55.0, "sensor_tuple": "{\"accel\":0.12}", "image_event_id": "img-b2", "workload_class": "stream"}
+{"session_id": "sim-vehicle-01", "timestamp_ms": 1727700008000, "latitude": 12.941340, "longitude": 77.696074, "speed_mps": 11.0, "edge_id": "edge-c", "heading_deg": 40.0, "sensor_tuple": "{\"accel\":0.08}", "workload_class": "stream"}

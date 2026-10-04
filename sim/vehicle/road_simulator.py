@@ -592,6 +592,9 @@ def run_simulation(
             "speed_mps": round(hero.v, 2),
             "edge_id": edge_id,
             "heading_deg": round(hero.heading_deg, 1),
+            "sensor_tuple": json.dumps({"accel": round(hero.v * 0.02, 3), "speed": round(hero.v, 2)}),
+            "image_event_id": f"img-{edge_id}-{int(t0)}" if int(t0) % 8 == 0 else None,
+            "workload_class": "image" if int(t0) % 8 == 0 else "stream",
         }
 
         try:

@@ -1,0 +1,3 @@
+{"session_id":"sim-vehicle-01","timestamp_ms":1700000000000,"latitude":12.920709,"longitude":77.663605,"speed_mps":12.0,"edge_id":"edge-a","heading_deg":45.0,"sensor_tuple":"{\"accel\":0.2}","workload_class":"stream"}
+{"session_id":"sim-vehicle-01","timestamp_ms":1700000001500,"latitude":12.922000,"longitude":77.667000,"speed_mps":12.4,"edge_id":"edge-a","heading_deg":48.0,"sensor_tuple":"{\"accel\":0.3}","workload_class":"stream"}
+{"session_id":"sim-vehicle-01","timestamp_ms":1700000003000,"latitude":12.941340,"longitude":77.696074,"speed_mps":11.8,"edge_id":"edge-c","heading_deg":52.0,"sensor_tuple":"{\"accel\":0.1}","image_event_id":"img-skip","workload_class":"image"}
