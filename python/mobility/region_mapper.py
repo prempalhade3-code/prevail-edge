@@ -4,6 +4,25 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
 
+def point_in_polygon(lat: float, lon: float, polygon: List[List[float]]) -> bool:
+    """Ray-casting containment test. Polygon vertices are [lat, lon]."""
+    inside = False
+    n = len(polygon)
+    if n < 3:
+        return False
+    j = n - 1
+    for i in range(n):
+        yi, xi = polygon[i][0], polygon[i][1]
+        yj, xj = polygon[j][0], polygon[j][1]
+        intersects = ((xi > lon) != (xj > lon)) and (
+            lat < (yj - yi) * (lon - xi) / ((xj - xi) or 1e-12) + yi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great circle distance between two points on the Earth in meters."""
     R = 6371000.0  # Earth radius in meters
@@ -44,15 +63,12 @@ class RegionMapper:
             self.regions = data.get("regions", [])
 
     def get_edge_id(self, latitude: float, longitude: float, max_radius_m: Optional[float] = None) -> str:
-        """
-        Finds the closest edge ID for given GPS coordinates.
-        If max_radius_m is specified, only matches if within that distance;
-        otherwise returns closest region or falls back to 'edge-a'.
-        """
+        """Map GPS to an edge using region polygons first, then nearest centroid."""
         if not self.regions:
             return "edge-a"
 
-        best_edge_id = None
+        contained: List[Tuple[str, float]] = []
+        nearest_id = None
         min_distance = float("inf")
 
         for region in self.regions:
@@ -60,15 +76,19 @@ class RegionMapper:
             r_lon = region["longitude"]
             edge_id = region["edge_id"]
             dist = haversine_distance_m(latitude, longitude, r_lat, r_lon)
-
             if dist < min_distance:
                 min_distance = dist
-                best_edge_id = edge_id
+                nearest_id = edge_id
+            if region.get("polygon") and point_in_polygon(latitude, longitude, region["polygon"]):
+                contained.append((edge_id, dist))
+
+        if contained:
+            contained.sort(key=lambda item: item[1])
+            return contained[0][0]
 
         if max_radius_m is not None and min_distance > max_radius_m:
             return "edge-a"
-
-        return best_edge_id or "edge-a"
+        return nearest_id or "edge-a"
 
     def get_region_center(self, edge_id: str) -> Optional[Tuple[float, float]]:
         """Returns (latitude, longitude) center of the specified edge_id."""

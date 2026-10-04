@@ -27,6 +27,21 @@ class TestMobilityModule(unittest.TestCase):
         dist = haversine_distance_m(12.920709, 77.663605, 12.928155, 77.681794)
         self.assertGreater(dist, 100.0)
 
+    def test_polygon_contains_region_center(self):
+        from python.mobility.region_mapper import point_in_polygon
+
+        region = next(r for r in self.mapper.regions if r["edge_id"] == "edge-a")
+        self.assertTrue(point_in_polygon(region["latitude"], region["longitude"], region["polygon"]))
+
+    def test_road_network_eta_uses_graph(self):
+        from python.mobility.road_graph import RoadGraph
+
+        graph = RoadGraph()
+        a_to_d = graph.shortest_path_m("edge-a", "edge-d")
+        a_to_b = graph.shortest_path_m("edge-a", "edge-b")
+        self.assertIsNotNone(a_to_d)
+        self.assertGreater(a_to_d, a_to_b)
+
     def test_estimate_eta(self):
         """Test ETA estimation from edge-a center to edge-b center."""
         gps_a = (12.920709, 77.663605)
@@ -36,6 +51,15 @@ class TestMobilityModule(unittest.TestCase):
         # Test zero speed fallback
         eta_fallback = estimate_eta(gps_a, "edge-b", speed_mps=0.0, region_mapper=self.mapper)
         self.assertGreater(eta_fallback, 0.0)
+
+    def test_sumo_live_projects_spine_onto_corridor(self):
+        from sim.vehicle.sumo_live import _interp_corridor
+
+        lat0, lon0 = _interp_corridor(0.0, 400.0)
+        lat1, lon1 = _interp_corridor(2000.0, 400.0)
+        self.assertAlmostEqual(lat0, 12.920709, places=4)
+        self.assertGreater(lat1, lat0)
+        self.assertGreater(lon1, lon0)
 
     def test_trajectory_sample_schema_validity(self):
         """Verify generated trajectory sample adheres strictly to contract schema."""
@@ -63,6 +87,20 @@ class TestMobilityModule(unittest.TestCase):
         self.assertIsInstance(sample["speed_mps"], (float, int))
         self.assertGreaterEqual(sample["speed_mps"], 0)
         self.assertIsInstance(sample["edge_id"], str)
+
+    def test_route_planner_source_destination(self):
+        from python.mobility.route_planner import plan_ticks, shortest_path
+        from python.mobility.road_graph import RoadGraph
+
+        path = shortest_path(RoadGraph(), "edge-a", "edge-d")
+        self.assertEqual(path, ["edge-a", "edge-b", "edge-c", "edge-d"])
+        ticks = plan_ticks("edge-a", "edge-b", linger_first=4, steps_per_leg=8, include_images=True)
+        self.assertGreater(len(ticks), 4)
+        self.assertTrue(any(t.get("image_jpeg_b64") for t in ticks))
+        coords = {(round(t["latitude"], 5), round(t["longitude"], 5)) for t in ticks}
+        self.assertGreater(len(coords), 2, "route must follow corridor waypoints, not two centroids")
+        mapped = {self.mapper.get_edge_id(t["latitude"], t["longitude"]) for t in ticks}
+        self.assertTrue(mapped <= {"edge-a", "edge-b"})
 
 
 if __name__ == "__main__":
