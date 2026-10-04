@@ -46,6 +46,9 @@ class EdgeAggregator:
         self._urls = edge_urls()
         self._auth_url = authoritative_url()
 
+    def urls(self) -> dict[str, str]:
+        return dict(self._urls)
+
     async def _fetch_snapshot(self, edge_id: str, url: str) -> tuple[str, dict[str, Any] | None]:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -118,6 +121,8 @@ class EdgeAggregator:
                 seen.add(key)
                 timeline.append(event)
         timeline.sort(key=lambda e: e.get("timestamp_ms", 0))
+        if len(timeline) > 200:
+            timeline = timeline[-200:]
 
         merged = dict(primary)
         merged["topology"] = list(merged_topology.values())
@@ -148,6 +153,27 @@ class EdgeAggregator:
             ):
                 if key in freshest:
                     merged[key] = freshest[key]
+        newest_pred = None
+        newest_ts = -1
+        for snap in snapshots.values():
+            pred = snap.get("prediction")
+            if not isinstance(pred, dict) or pred.get("eta_sec") is None:
+                continue
+            ts = int(pred.get("computed_at_ms") or snap.get("vehicle_updated_ms") or 0)
+            if ts >= newest_ts:
+                newest_ts = ts
+                newest_pred = pred
+        if newest_pred is not None:
+            merged["prediction"] = newest_pred
+        merged["tee_bytes"] = sum(int(s.get("tee_bytes") or 0) for s in snapshots.values())
+        cpu = [float(s.get("cpu_available_ratio") or 0) for s in snapshots.values() if s.get("cpu_available_ratio") is not None]
+        ram = [float(s.get("memory_available_ratio") or 0) for s in snapshots.values() if s.get("memory_available_ratio") is not None]
+        rss = [int(s.get("rss_bytes") or 0) for s in snapshots.values()]
+        if cpu:
+            merged["cpu_available_ratio"] = sum(cpu) / len(cpu)
+        if ram:
+            merged["memory_available_ratio"] = sum(ram) / len(ram)
+        merged["rss_bytes"] = sum(rss)
         return merged
 
     async def snapshot(self) -> dict[str, Any]:
@@ -156,11 +182,15 @@ class EdgeAggregator:
 
     async def authority_url(self) -> str:
         """Route control traffic to whichever edge currently holds authority."""
-        snaps = await self.fetch_all()
-        if snaps:
-            holder = self.merge_snapshots(snaps).get("authority", {}).get("holder_edge_id")
-            if holder and holder in self._urls:
-                return self._urls[holder]
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(f"{self._auth_url}/v1/current-node")
+                resp.raise_for_status()
+                holder = (resp.json() or {}).get("authority_holder")
+                if holder and holder in self._urls:
+                    return self._urls[holder]
+        except httpx.HTTPError:
+            pass
         return self._auth_url
 
     async def get(self, path: str) -> Any:
@@ -196,6 +226,7 @@ class EdgeAggregator:
             for snap in snaps.values()
             if snap.get("authority")
         }
+        holders = {h for h in holders if h}
         return {
             "transition_count": sum(
                 1 for e in merged.get("timeline", []) if e.get("event_type") == "AuthorityTransferred"
@@ -204,6 +235,6 @@ class EdgeAggregator:
             "mode": merged.get("mode", "prevail"),
             "edges_reachable": len(snaps),
             "edges_total": len(self._urls),
-            "authority_holders_reported": sorted(h for h in holders if h),
+            "authority_holders_reported": sorted(holders),
             "single_authority_invariant": len(holders) <= 1,
         }
