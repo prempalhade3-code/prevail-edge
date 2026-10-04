@@ -25,4 +25,16 @@ public class TrajectorySample {
 
     @JsonProperty("heading_deg")
     public Double headingDeg;
+
+    @JsonProperty("sensor_tuple")
+    public String sensorTuple;
+
+    @JsonProperty("image_event_id")
+    public String imageEventId;
+
+    @JsonProperty("workload_class")
+    public String workloadClass;
+
+    @JsonProperty("image_jpeg_b64")
+    public String imageJpegB64;
 }
