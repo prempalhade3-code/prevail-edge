@@ -1,0 +1,17 @@
+id: wrong-prediction
+description: Predicted next edge is wrong; expect discard + reactive checkpoint fallback
+stream_file: sim/fixtures/wrong-prediction.jsonl
+session_id: sim-vehicle-01
+mode: prevail
+repeats: 2
+expected_handoffs:
+  - from: edge-a
+    to: edge-c
+baseline:
+  checkpoint_save_ms: 120
+  checkpoint_restore_ms: 350
+  network_overhead_ms: 80
+metrics:
+  - migration_latency_ms
+  - wrong_prediction_count
+  - reactive_count

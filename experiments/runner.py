@@ -96,11 +96,16 @@ def simulate_baseline_migration(scenario: Scenario, samples: List[Dict[str, Any]
             "metric_source": "live_reactive",
         }
     handoffs = count_handoffs(samples)
+    checkpoint_ms = (
+        float(scenario.baseline.get("checkpoint_save_ms") or 0)
+        + float(scenario.baseline.get("checkpoint_restore_ms") or 0)
+        + float(scenario.baseline.get("network_overhead_ms") or 0)
+    )
     return {
-        "migration_latency_ms": 0.0,
+        "migration_latency_ms": checkpoint_ms * max(handoffs, 1),
         "samples_processed": float(len(samples)),
         "handoff_count": float(handoffs),
-        "metric_source": "unavailable",
+        "metric_source": "scenario_checkpoint",
         "live_runtime": 0.0,
     }
 
