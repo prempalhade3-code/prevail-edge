@@ -1,0 +1,11 @@
+{
+  "nodes": ["edge-a", "edge-b", "edge-c", "edge-d"],
+  "edges": [
+    {"from": "edge-a", "to": "edge-b", "distance_m": 2200},
+    {"from": "edge-b", "to": "edge-a", "distance_m": 2200},
+    {"from": "edge-b", "to": "edge-c", "distance_m": 2100},
+    {"from": "edge-c", "to": "edge-b", "distance_m": 2100},
+    {"from": "edge-c", "to": "edge-d", "distance_m": 1950},
+    {"from": "edge-d", "to": "edge-c", "distance_m": 1950}
+  ]
+}

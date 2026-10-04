@@ -1,0 +1,20 @@
+{
+  "name": "Bangalore ORR / Bellandur corridor",
+  "source": "OpenStreetMap ORR alignment between the four PREVAIL edge boxes",
+  "waypoints": [
+    {"latitude": 12.920709, "longitude": 77.663605, "name": "ORR North / Edge A"},
+    {"latitude": 12.922150, "longitude": 77.667210, "name": "ORR toward Ibbalur"},
+    {"latitude": 12.923620, "longitude": 77.670880, "name": "Ibbalur flyover"},
+    {"latitude": 12.925310, "longitude": 77.674540, "name": "ORR east of Ibbalur"},
+    {"latitude": 12.926880, "longitude": 77.678210, "name": "approach Tech Park"},
+    {"latitude": 12.928155, "longitude": 77.681794, "name": "Tech Park / Edge B"},
+    {"latitude": 12.930420, "longitude": 77.685160, "name": "ORR past Ecospace"},
+    {"latitude": 12.933180, "longitude": 77.688420, "name": "Bellandur lake ORR"},
+    {"latitude": 12.936410, "longitude": 77.691880, "name": "ORR / Bellandur Rd"},
+    {"latitude": 12.941340, "longitude": 77.696074, "name": "Bellandur Junction / Edge C"},
+    {"latitude": 12.944880, "longitude": 77.698620, "name": "Kadubeesanahalli approach"},
+    {"latitude": 12.948720, "longitude": 77.700410, "name": "Kadubeesanahalli ORR"},
+    {"latitude": 12.952610, "longitude": 77.701880, "name": "ORR southbound"},
+    {"latitude": 12.956990, "longitude": 77.703291, "name": "ORR South / Edge D"}
+  ]
+}
