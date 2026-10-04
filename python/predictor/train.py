@@ -1,6 +1,7 @@
 """Training and offline evaluation pipeline for PREVAIL edge prediction models."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -30,10 +31,12 @@ def evaluate_accuracy(
     total = 0
 
     with torch.no_grad():
-        for x_batch, y_batch in val_loader:
+        for batch in val_loader:
+            x_batch, feat_batch, y_batch = batch
             x_batch = x_batch.to(device)
+            feat_batch = feat_batch.to(device)
             y_batch = y_batch.to(device)
-            logits = model(x_batch)
+            logits = model(x_batch, feat_batch)
 
             # Top-1
             preds_top1 = torch.argmax(logits, dim=-1)
@@ -64,7 +67,7 @@ def evaluate_baseline_accuracy(
     correct = 0
     total = 0
 
-    for x_batch, y_batch in val_loader:
+    for x_batch, _feat_batch, y_batch in val_loader:
         for row, target in zip(x_batch.tolist(), y_batch.tolist()):
             tokens = [t for t in row if t != 0]
             last_edge = idx_to_edge.get(tokens[-1]) if tokens else None
@@ -98,24 +101,60 @@ def train_pipeline(
     print(f"=== Starting PREVAIL Predictor Training Pipeline ===")
     print(f"Edge Label Space ({num_edges} nodes): {edge_ids}")
 
-    # 1. Ingest corridor / GPS-labeled sequences, then augment with synthetic.
-    from python.predictor.ingest_gps import sequences_from_jsonl
+    from python.predictor.download_official import ensure_official
+    from python.predictor.ingest_gps import (
+        load_official_featured_sequences,
+        load_official_sequences,
+        sequences_from_jsonl,
+        synthesize_geolife_tdrive,
+    )
 
-    sequences: List[List[str]] = []
+    sequences: List = []
+    root = Path(__file__).resolve().parents[2]
+    allow_synthetic = os.getenv("PREVAIL_ALLOW_SYNTHETIC", "") == "1"
+    source = "official"
+    try:
+        ensure_official()
+        official = load_official_featured_sequences()
+        if not official:
+            official = load_official_sequences()
+        sequences.extend(official)
+        print(f"Loaded {len(official)} official T-Drive/GeoLife sequences (speed/heading features)")
+    except Exception as exc:
+        if not allow_synthetic:
+            raise RuntimeError(
+                f"official T-Drive/GeoLife data is required for training: {exc}"
+            ) from exc
+        source = "synthetic-fallback"
+        print(f"WARNING: official download failed ({exc}); PREVAIL_ALLOW_SYNTHETIC=1")
+
     labeled = os.getenv("PREVAIL_TRAIN_SEQUENCES")
-    fixture = Path(__file__).resolve().parents[2] / "sim" / "fixtures" / "sample-trajectory.jsonl"
-    for candidate in [Path(labeled) if labeled else None, fixture]:
-        if candidate and candidate.exists():
-            loaded = sequences_from_jsonl(candidate)
-            sequences.extend(loaded)
-            print(f"Loaded {len(loaded)} labeled sequences from {candidate}")
-    generator = SyntheticTrajectoryGenerator(edge_ids=edge_ids)
-    sequences.extend(generator.generate_dataset(num_sequences=num_sequences))
-    print(f"Training on {len(sequences)} trajectory sequences (labeled + synthetic).")
+    if labeled and Path(labeled).exists():
+        loaded = sequences_from_jsonl(Path(labeled))
+        sequences.extend(loaded)
+        print(f"Loaded {len(loaded)} labeled sequences from {labeled}")
+
+    if allow_synthetic:
+        geolife_csv = root / "python" / "predictor" / "data" / "geolife_tdrive.csv"
+        if not geolife_csv.exists():
+            synthesize_geolife_tdrive(geolife_csv)
+        from python.predictor.ingest_gps import sequences_from_csv
+        sequences.extend(sequences_from_csv(geolife_csv))
+        generator = SyntheticTrajectoryGenerator(edge_ids=edge_ids)
+        sequences.extend(generator.generate_dataset(num_sequences=num_sequences))
+
+    if len(sequences) < 8:
+        raise RuntimeError(f"not enough official sequences to train GRU: {len(sequences)}")
+    print(f"Training on {len(sequences)} trajectory sequences (source={source}).")
+
+    edge_only = [
+        [step[0] if isinstance(step, tuple) else step for step in seq]
+        for seq in sequences
+    ]
 
     # 2. Train Destination-Matrix Baseline for benchmarking
     baseline = DestinationMatrixBaseline(edge_ids=edge_ids)
-    baseline.fit(sequences)
+    baseline.fit(edge_only)
     if output_dir:
         baseline_path = os.path.join(output_dir, "baseline_matrix.json")
         baseline.save(baseline_path)
@@ -156,12 +195,13 @@ def train_pipeline(
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0.0
-        for x_batch, y_batch in train_loader:
+        for x_batch, feat_batch, y_batch in train_loader:
             x_batch = x_batch.to(device)
+            feat_batch = feat_batch.to(device)
             y_batch = y_batch.to(device)
 
             optimizer.zero_grad()
-            logits = model(x_batch)
+            logits = model(x_batch, feat_batch)
             loss = criterion(logits, y_batch)
             loss.backward()
             optimizer.step()
@@ -204,15 +244,28 @@ def train_pipeline(
     model_cpu = model.cpu()
     model_cpu.export_torchscript(export_path)
     baseline.save(os.path.join(output_dir, "baseline_matrix.json"))
-    try:
-        model_cpu.export_onnx(os.path.join(output_dir, "gru_predictor.onnx"))
-        print("Exported ONNX model next to TorchScript.")
-    except Exception as exc:
-        print(f"ONNX export skipped: {exc}")
+    onnx_path = model_cpu.export_onnx(os.path.join(output_dir, "gru_predictor.onnx"))
+    print(f"Exported ONNX model to {onnx_path}")
 
     file_size_kb = os.path.getsize(export_path) / 1024.0
     print(f"Successfully exported TorchScript model to: {export_path}")
     print(f"Model file size: {file_size_kb:.2f} KB (Target < 1024 KB: PASS)")
+
+    metadata = {
+        "source": source,
+        "sequence_count": len(sequences),
+        "top1_accuracy": final_metrics["top1_accuracy"],
+        "top2_accuracy": final_metrics["top2_accuracy"],
+        "baseline_top1_accuracy": final_metrics["baseline_top1_accuracy"],
+        "model_path": export_path,
+        "model_bytes": os.path.getsize(export_path),
+        "onnx_path": onnx_path,
+        "features": ["speed_norm", "heading_norm"],
+    }
+    meta_path = os.path.join(output_dir, "training_metadata.json")
+    Path(meta_path).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(f"Wrote training metadata to {meta_path}")
+    final_metrics["source"] = 1.0 if source == "official" else 0.0
 
     return model_cpu, final_metrics
 
