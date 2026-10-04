@@ -8,28 +8,28 @@
   "alpha": 0.05,
   "transitions": {
     "edge-a": {
-      "edge-a": 0.041667,
-      "edge-b": 0.875,
-      "edge-c": 0.041667,
-      "edge-d": 0.041667
+      "edge-a": 0.000106,
+      "edge-b": 0.955304,
+      "edge-c": 0.031805,
+      "edge-d": 0.012785
     },
     "edge-b": {
-      "edge-a": 0.041667,
-      "edge-b": 0.041667,
-      "edge-c": 0.875,
-      "edge-d": 0.041667
+      "edge-a": 0.519257,
+      "edge-b": 5.7e-05,
+      "edge-c": 0.470404,
+      "edge-d": 0.010282
     },
     "edge-c": {
-      "edge-a": 0.25,
-      "edge-b": 0.25,
-      "edge-c": 0.25,
-      "edge-d": 0.25
+      "edge-a": 0.026038,
+      "edge-b": 0.832103,
+      "edge-c": 0.0001,
+      "edge-d": 0.14176
     },
     "edge-d": {
-      "edge-a": 0.25,
-      "edge-b": 0.25,
-      "edge-c": 0.25,
-      "edge-d": 0.25
+      "edge-a": 0.103784,
+      "edge-b": 0.069381,
+      "edge-c": 0.826261,
+      "edge-d": 0.000573
     }
   }
 }

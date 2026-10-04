@@ -1,0 +1,14 @@
+{
+  "source": "official",
+  "sequence_count": 41,
+  "top1_accuracy": 0.770618556701031,
+  "top2_accuracy": 0.9716494845360825,
+  "baseline_top1_accuracy": 0.7139175257731959,
+  "model_path": "/Users/prempalhade/Documents/Codex/2026-08-21/i-have-attached-the-finalized-implementation/iista-prototype/prevail/python/predictor/models/gru_predictor.pt",
+  "model_bytes": 30650,
+  "onnx_path": "/Users/prempalhade/Documents/Codex/2026-08-21/i-have-attached-the-finalized-implementation/iista-prototype/prevail/python/predictor/models/gru_predictor.onnx",
+  "features": [
+    "speed_norm",
+    "heading_norm"
+  ]
+}
