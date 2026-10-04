@@ -11,6 +11,15 @@ pub struct TrajectorySample {
     pub edge_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heading_deg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sensor_tuple: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workload_class: Option<String>,
+    /// Base64-encoded JPEG (or other) image payload for image-class work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_jpeg_b64: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -28,6 +37,8 @@ pub struct EdgeCapability {
     pub edge_id: String,
     pub supports_stream: bool,
     pub supports_image: bool,
+    #[serde(default)]
+    pub supports_video: bool,
     pub supports_gpu: bool,
     pub cpu_available_ratio: f64,
     pub memory_available_ratio: f64,
@@ -117,6 +128,16 @@ pub struct SystemSnapshot {
     pub traffic_vehicles: Vec<TrafficVehicle>,
     #[serde(default)]
     pub predictor_degraded: bool,
+    #[serde(default)]
+    pub tee_bytes: u64,
+    #[serde(default)]
+    pub cpu_available_ratio: f64,
+    #[serde(default)]
+    pub memory_available_ratio: f64,
+    #[serde(default)]
+    pub rss_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flink_job_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +163,9 @@ pub struct SpeculationConfig {
     pub promotion_margin_sec: f64,
     pub estimated_sync_sec: f64,
     pub require_image_capability: bool,
+    pub capability_check_enabled: bool,
+    pub speculation_enabled: bool,
+    pub mode: String,
 }
 
 impl Default for SpeculationConfig {
@@ -154,9 +178,10 @@ impl Default for SpeculationConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.60);
-        let require_image = std::env::var("PREVAIL_REQUIRE_IMAGE_CAPABILITY")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        let require_image = env_flag("PREVAIL_REQUIRE_IMAGE_CAPABILITY", false);
+        let capability_check = env_flag("PREVAIL_CAPABILITY_CHECK_ENABLED", true);
+        let speculation_enabled = env_flag("PREVAIL_SPECULATION_ENABLED", true);
+        let mode = std::env::var("PREVAIL_MODE").unwrap_or_else(|_| "prevail".into());
         Self {
             max_shadows,
             min_confidence,
@@ -164,9 +189,25 @@ impl Default for SpeculationConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.95),
-            promotion_margin_sec: 2.0,
-            estimated_sync_sec: 5.0,
+            promotion_margin_sec: std::env::var("PREVAIL_PROMOTION_MARGIN_SEC")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2.0),
+            estimated_sync_sec: std::env::var("PREVAIL_ESTIMATED_SYNC_SEC")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5.0),
             require_image_capability: require_image,
+            capability_check_enabled: capability_check,
+            speculation_enabled,
+            mode,
         }
+    }
+}
+
+fn env_flag(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Ok(v) => v == "1" || v.eq_ignore_ascii_case("true"),
+        Err(_) => default,
     }
 }

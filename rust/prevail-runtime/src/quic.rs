@@ -16,7 +16,7 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -74,7 +74,7 @@ impl MeshAddressBook {
                 continue;
             }
             if let Some((edge, addr)) = entry.split_once('=') {
-                if let Ok(parsed) = addr.trim().parse::<SocketAddr>() {
+                if let Some(parsed) = resolve_socket_addr(addr.trim()) {
                     peers.insert(edge.trim().to_string(), parsed);
                 }
             }
@@ -107,6 +107,13 @@ impl MeshAddressBook {
     pub fn is_empty(&self) -> bool {
         self.peers.is_empty()
     }
+}
+
+fn resolve_socket_addr(addr: &str) -> Option<SocketAddr> {
+    if let Ok(parsed) = addr.parse::<SocketAddr>() {
+        return Some(parsed);
+    }
+    addr.to_socket_addrs().ok().and_then(|mut iter| iter.next())
 }
 
 /// Accepts any peer certificate.
@@ -236,6 +243,7 @@ impl ControlHandler for PingOnlyHandler {
                 Some(control_envelope::Payload::PeerPong(crate::proto::PeerPong {
                     edge_id: self.local_edge_id.clone(),
                     received_at_ms: ping.sent_at_ms,
+                    ..Default::default()
                 }))
             }
             _ => None,

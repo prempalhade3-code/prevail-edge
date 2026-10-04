@@ -32,6 +32,7 @@ impl PredictorClient {
             "latitude": sample.latitude,
             "longitude": sample.longitude,
             "speed_mps": sample.speed_mps,
+            "heading_deg": sample.heading_deg,
         });
         let _ = self.http.post(&url).json(&body).send().await;
     }

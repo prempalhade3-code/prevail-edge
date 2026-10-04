@@ -87,6 +87,7 @@ impl ControlTransport for InMemoryTransport {
                     payload: Some(control_envelope::Payload::PeerPong(crate::proto::PeerPong {
                         edge_id: pong.edge_id,
                         received_at_ms: pong.received_at_ms,
+                        ..Default::default()
                     })),
                 })
             }
