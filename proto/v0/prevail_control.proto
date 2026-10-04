@@ -15,6 +15,11 @@ message TrajectorySample {
   double speed_mps = 5;
   string edge_id = 6;
   optional double heading_deg = 7;
+  optional string sensor_tuple_json = 8;
+  optional string image_event_id = 9;
+  optional string workload_class = 10;
+  // JPEG (or other) image bytes for image-class work. Empty means no payload.
+  optional bytes image_jpeg = 11;
 }
 
 message PredictionResult {
@@ -37,6 +42,8 @@ message ShadowCreate {
   string source_edge_id = 2;
   string target_edge_id = 3;
   int64 requested_at_ms = 4;
+  // Latest Flink checkpoint/savepoint the shadow must restore from.
+  string savepoint_path = 5;
 }
 
 message ShadowRelease {
@@ -124,6 +131,12 @@ message PeerPing {
 message PeerPong {
   string edge_id = 1;
   int64 received_at_ms = 2;
+  string session_id = 3;
+  uint64 epoch = 4;
+  string holder_edge_id = 5;
+  string signature = 6;
+  bool is_warm_shadow = 7;
+  bool is_authoritative = 8;
 }
 
 message ShadowCreateAck {
@@ -138,6 +151,36 @@ message StateReplicate {
   string session_id = 1;
   uint64 sequence = 2;
   TrajectorySample sample = 3;
+}
+
+// ADR-002 periodic keyed-state alignment from authoritative Flink to shadows.
+message FlinkKeyedState {
+  string session_id = 1;
+  uint64 version = 2;
+  string current_edge = 3;
+  int64 sample_count = 4;
+  double speed_sum = 5;
+  int64 checkpointed_at_ms = 6;
+  bytes checkpoint_blob = 7;
+}
+
+message StateAlign {
+  string session_id = 1;
+  uint64 sequence = 2;
+  FlinkKeyedState keyed_state = 3;
+}
+
+message CheckpointTransfer {
+  string session_id = 1;
+  string from_edge_id = 2;
+  string to_edge_id = 3;
+  FlinkKeyedState state = 4;
+}
+
+message CheckpointAck {
+  string session_id = 1;
+  bool restored = 2;
+  int64 restore_ms = 3;
 }
 
 // Self-describing wrapper for every control-plane message on the QUIC mesh.
@@ -163,5 +206,12 @@ message ControlEnvelope {
     DemotionNotice demotion_notice = 19;
     EdgeCapabilityAdvertisement capability_advertisement = 20;
     StateReplicate state_replicate = 21;
+    SpeculationDecision speculation_decision = 22;
+    TimelineEvent timeline_event = 23;
+    MigrationFallbackStart migration_fallback_start = 24;
+    MigrationFallbackComplete migration_fallback_complete = 25;
+    StateAlign state_align = 26;
+    CheckpointTransfer checkpoint_transfer = 27;
+    CheckpointAck checkpoint_ack = 28;
   }
 }

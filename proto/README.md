@@ -9,7 +9,7 @@
 
 Generate code:
 
-- Rust: `tonic-build` / `prost` (see `rust/prevail-runtime/build.rs`)
-- Java: Flink module Maven protobuf plugin
+- Rust: `tonic-build` compiles both protos in `rust/prevail-runtime/build.rs` (gRPC sidecar server included).
+- Java: message names live in `flink/prevail-coordinator/.../PrevailControlMessages.java`; Flink talks to the sidecar over HTTP + the generated RPC surface.
 
 JSON equivalents for early integration: `docs/contracts/*.schema.json`
