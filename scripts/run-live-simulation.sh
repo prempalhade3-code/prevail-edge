@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "=== PREVAIL Live Simulation ==="
 echo "1) Start runtime with PREVAIL_LIVE_SIM=1 (skip button demo)"
 echo "2) Start backend on :8000 (serves UI from dist if built)"
-echo "3) Start road_simulator.py (car drives on road network)"
+echo "3) Start SUMO live mobility (TraCI → /v1/trajectory)"
 echo ""
 echo "Open: http://127.0.0.1:8000"
 echo ""
@@ -22,7 +22,10 @@ BACKEND_PID=$!
 sleep 1
 
 cd "$ROOT"
-PREVAIL_RUNTIME_URL=http://127.0.0.1:8090 python3 sim/vehicle/road_simulator.py &
+PREVAIL_TRAJECTORY_URL=http://127.0.0.1:8090/v1/trajectory \
+  PREVAIL_TRAFFIC_URL=http://127.0.0.1:8090/v1/traffic \
+  PREVAIL_SESSION_ID=sim-vehicle-01 \
+  PYTHONPATH="$ROOT" python3 -m sim.vehicle.sumo_live &
 SIM_PID=$!
 
 trap 'kill $RUNTIME_PID $BACKEND_PID $SIM_PID 2>/dev/null' EXIT
