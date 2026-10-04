@@ -1,6 +1,7 @@
 package dev.prevail.job;
 
 import dev.prevail.coordinator.SidecarClient;
+import dev.prevail.v0.PrevailControlProto;
 import org.apache.flink.api.common.accumulators.LongCounter;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
@@ -9,8 +10,8 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 /**
- * Keyed vehicle state: speed aggregates, edge tracking, handoff detection.
- * Applies sidecar output gating via Prem's SidecarClient contract.
+ * Keyed vehicle state with sidecar gRPC gating and checkpoint restore into this
+ * Flink instance (ADR-002 shadow / ADR-007 restore).
  */
 public class VehicleAggregateFunction
         extends KeyedProcessFunction<String, TrajectorySample, String> {
@@ -29,13 +30,19 @@ public class VehicleAggregateFunction
     private transient LongCounter gatedCounter;
     private transient LongCounter migrationCounter;
     private final String mode;
+    private final String sidecarTarget;
 
     public VehicleAggregateFunction(String mode) {
+        this(mode, System.getenv().getOrDefault("PREVAIL_SIDECAR_GRPC", "127.0.0.1:50051"));
+    }
+
+    public VehicleAggregateFunction(String mode, String sidecarTarget) {
         this.mode = mode;
+        this.sidecarTarget = sidecarTarget;
     }
 
     @Override
-    public void open(Configuration parameters) {
+    public void open(Configuration parameters) throws Exception {
         currentEdge = getRuntimeContext().getState(new ValueStateDescriptor<>("currentEdge", String.class));
         sampleCount = getRuntimeContext().getState(new ValueStateDescriptor<>("sampleCount", Long.class));
         speedSum = getRuntimeContext().getState(new ValueStateDescriptor<>("speedSum", Double.class));
@@ -49,16 +56,42 @@ public class VehicleAggregateFunction
         getRuntimeContext().addAccumulator(ACC_GATED, gatedCounter);
         getRuntimeContext().addAccumulator(ACC_MIGRATION_MS, migrationCounter);
 
-        String sidecarUrl = System.getenv().getOrDefault("PREVAIL_SIDECAR_URL", "http://127.0.0.1:8090");
-        sidecar = new SidecarClient(sidecarUrl);
+        sidecar = new SidecarClient(sidecarTarget);
+        restoreFromPeerIfNeeded();
+    }
+
+    @Override
+    public void close() {
+        if (sidecar != null) {
+            sidecar.close();
+        }
+    }
+
+    private void restoreFromPeerIfNeeded() throws Exception {
+        try {
+            PrevailControlProto.FlinkKeyedState restored = sidecar.restoreState("");
+            if (restored.getSampleCount() <= 0) {
+                return;
+            }
+            if (sampleCount.value() == null || sampleCount.value() == 0L) {
+                currentEdge.update(restored.getCurrentEdge());
+                sampleCount.update(restored.getSampleCount());
+                speedSum.update(restored.getSpeedSum());
+                migrationCounter.add(Math.max(1, restored.getCheckpointedAtMs() > 0 ? 1 : 1));
+            }
+        } catch (Exception ignored) {
+            // Shadow stays warm and will pick up teed samples even if restore is late.
+        }
     }
 
     @Override
     public void processElement(TrajectorySample sample, Context ctx, Collector<String> out) throws Exception {
+        if (sampleCount.value() == null || sampleCount.value() == 0L) {
+            restoreFromPeerIfNeeded();
+        }
         String prevEdge = currentEdge.value();
         if (prevEdge != null && !prevEdge.equals(sample.edgeId)) {
             handoffCounter.add(1);
-            // Latency is measured by the Rust runtime (AuthorityTransferred.latency_ms).
         }
         currentEdge.update(sample.edgeId);
 
@@ -72,7 +105,8 @@ public class VehicleAggregateFunction
 
         boolean outputEnabled = true;
         try {
-            SidecarClient.AuthorityState auth = sidecar.getAuthorityForEdge(sample.sessionId, sample.edgeId);
+            // Always ask THIS job's local sidecar — never the GPS edge's.
+            SidecarClient.AuthorityState auth = sidecar.getAuthority(sample.sessionId);
             outputEnabled = auth.outputEnabled();
         } catch (Exception ex) {
             outputEnabled = false;
@@ -82,9 +116,13 @@ public class VehicleAggregateFunction
             gatedCounter.add(1);
             double avgSpeed = sum / count;
             out.collect(String.format(
-                    "session=%s edge=%s avg_speed=%.2f samples=%d",
-                    sample.sessionId, sample.edgeId, avgSpeed, count));
+                    "{\"session\":\"%s\",\"edge\":\"%s\",\"avg_speed\":%.2f,\"samples\":%d,\"sensor\":\"%s\",\"image\":\"%s\",\"mode\":\"%s\"}",
+                    sample.sessionId, sample.edgeId, avgSpeed, count,
+                    sample.sensorTuple == null ? "-" : sample.sensorTuple,
+                    sample.imageEventId == null ? "-" : sample.imageEventId,
+                    mode));
         }
-    }
 
+        sidecar.reportState(sample.sessionId, count, sum, sample.edgeId);
+    }
 }

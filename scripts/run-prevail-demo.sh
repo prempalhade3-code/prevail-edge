@@ -49,6 +49,11 @@ export PREVAIL_PREDICTOR_URL="${PREVAIL_PREDICTOR_URL:-http://127.0.0.1:8091}"
 export PREVAIL_SESSION_CONFIG_PATH="$ROOT/deploy/config/session.json"
 export PREVAIL_EDGE_REGIONS_PATH="$ROOT/deploy/config/edge-regions.json"
 export PREVAIL_EDGE_CAPABILITIES_PATH="$ROOT/deploy/config/edge-capabilities.json"
+export PREVAIL_OBSERVABILITY_URL="http://127.0.0.1:8000"
+export PREVAIL_MODE="${PREVAIL_MODE:-prevail}"
+export PREVAIL_CAPABILITY_CHECK_ENABLED="${PREVAIL_CAPABILITY_CHECK_ENABLED:-1}"
+export PREVAIL_SPECULATION_ENABLED="${PREVAIL_SPECULATION_ENABLED:-1}"
+export PREVAIL_CHECKPOINT_DIR="${PREVAIL_CHECKPOINT_DIR:-$ROOT/experiments/checkpoints}"
 
 PIDS=()
 cleanup() {
@@ -58,8 +63,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 start_edge() {
-  local edge="$1" port="$2"
-  PREVAIL_EDGE_ID="$edge" PREVAIL_RUNTIME_PORT="$port" "$BIN" &
+  local edge="$1" port="$2" grpc="$3"
+  PREVAIL_EDGE_ID="$edge" PREVAIL_RUNTIME_PORT="$port" \
+    PREVAIL_SIDECAR_GRPC_PORT="$grpc" \
+    PREVAIL_FLINK_JAR="$JAR" \
+    PREVAIL_FLINK_SIDECAR="127.0.0.1:${grpc}" \
+    PREVAIL_FLINK_SINK="$ROOT/experiments/flink-sink" \
+    PREVAIL_CHECKPOINT_DIR="$ROOT/experiments/checkpoints/${edge}" \
+    "$BIN" &
   PIDS+=("$!")
   sleep 0.4
 }
@@ -71,10 +82,10 @@ PIDS+=("$!")
 wait_http "http://127.0.0.1:8091/health" "predictor" 20 || true
 
 log "Starting edge mesh…"
-start_edge edge-a 8090
-start_edge edge-b 8092
-start_edge edge-c 8094
-start_edge edge-d 8096
+start_edge edge-a 8090 50051
+start_edge edge-b 8092 50052
+start_edge edge-c 8094 50053
+start_edge edge-d 8096 50054
 wait_http "http://127.0.0.1:8090/health" "edge-a" 20 || true
 
 # Postgres for timeline persistence + integration tests
@@ -109,32 +120,25 @@ PREVAIL_BOOTSTRAP_EDGE_ID=edge-a \
 PIDS+=("$!")
 wait_http "http://127.0.0.1:8000/health" "backend" 20 || true
 
-# Flink live tap: prefer `flink run` when FLINK_HOME is set, else standalone socket job
+# Authority Flink only. Shadows are submitted on ShadowCreate and torn down on ShadowRelease.
 if [[ -f "$JAR" ]]; then
-  log "Starting Flink live tap on port ${FLINK_TAP_PORT}"
-  if [[ -n "${FLINK_HOME:-}" && -x "${FLINK_HOME}/bin/flink" ]]; then
-    PREVAIL_EDGE_URLS="$EDGE_HTTP" PREVAIL_SIDECAR_URL="$PREVAIL_SIDECAR_URL" \
-      "${FLINK_HOME}/bin/flink" run -c dev.prevail.job.PrevailStreamJob "$JAR" \
-      --stream "socket://127.0.0.1:${FLINK_TAP_PORT}" --mode prevail &
-  else
-    PREVAIL_EDGE_URLS="$EDGE_HTTP" PREVAIL_SIDECAR_URL="$PREVAIL_SIDECAR_URL" \
-      java -jar "$JAR" --stream "socket://127.0.0.1:${FLINK_TAP_PORT}" --mode prevail &
-  fi
-  PIDS+=("$!")
-  sleep 3
-  export PREVAIL_FLINK_TAP="127.0.0.1:${FLINK_TAP_PORT}"
+  mkdir -p "$ROOT/experiments/flink-sink" "$ROOT/experiments/checkpoints"
+  export PREVAIL_FLINK_JAR="$JAR"
+  export PREVAIL_FLINK_SINK="$ROOT/experiments/flink-sink"
+  log "Authority Flink job will be started by edge-a (shadows on demand)"
 fi
 
-log "Starting road simulator (IDM traffic)…"
+log "Starting live SUMO mobility source…"
 cd "$ROOT"
-PREVAIL_BACKEND_URL=http://127.0.0.1:8000 PREVAIL_FLINK_TAP="${PREVAIL_FLINK_TAP:-}" \
-  "$ROOT/backend/.venv/bin/python" sim/vehicle/road_simulator.py &
+PREVAIL_TRAJECTORY_URL=http://127.0.0.1:8090/v1/trajectory \
+  PREVAIL_TRAFFIC_URL=http://127.0.0.1:8090/v1/traffic \
+  PREVAIL_SESSION_ID=session-lab-1 \
+  PYTHONPATH="$ROOT" "$ROOT/backend/.venv/bin/python" -m sim.vehicle.sumo_live &
 PIDS+=("$!")
 
 echo ""
 echo "=== PREVAIL thesis demo ==="
 echo "Dashboard:  http://127.0.0.1:8000"
-echo "Predictor:  http://127.0.0.1:8091/health"
-echo "Edges:      8090/8092/8094/8096  QUIC: 9101-9104"
-echo "Press Ctrl+C to stop"
+echo "Edges:      8090/8092/8094/8096  QUIC: 9101-9104  gRPC sidecar: 50051-50054"
+echo "Press Ctrl+C to stop the mesh."
 wait

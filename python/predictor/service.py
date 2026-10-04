@@ -1,5 +1,7 @@
 """FastAPI inference service for PREVAIL next-edge probability prediction."""
 
+import json
+import os
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -10,7 +12,7 @@ import torch
 
 from python.predictor.baseline.matrix_baseline import DestinationMatrixBaseline
 from python.predictor.config import config
-from python.predictor.model import EdgePredictorGRU
+from python.predictor.model import EdgePredictorGRU, normalize_heading, normalize_speed
 
 
 class PredictRequest(BaseModel):
@@ -26,6 +28,7 @@ class TrajectoryUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     speed_mps: Optional[float] = None
+    heading_deg: Optional[float] = None
 
 
 class PredictionResponse(BaseModel):
@@ -49,8 +52,10 @@ class SessionHistoryStore:
         self.max_history = max_history
         self._history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=self.max_history))
         self._last_speed: Dict[str, float] = {}
+        self._last_heading: Dict[str, float] = {}
         self._last_gps: Dict[str, Tuple[float, float]] = {}
         self._dwell_samples: Dict[str, int] = defaultdict(int)
+        self._features: Dict[str, deque] = defaultdict(lambda: deque(maxlen=self.max_history))
 
     def record_step(
         self,
@@ -59,15 +64,25 @@ class SessionHistoryStore:
         speed_mps: Optional[float] = None,
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
+        heading_deg: Optional[float] = None,
     ):
         history = self._history[session_id]
+        if speed_mps is not None:
+            self._last_speed[session_id] = speed_mps
+        if heading_deg is not None:
+            self._last_heading[session_id] = heading_deg
+        feat = (
+            normalize_speed(self._last_speed.get(session_id, 12.0)),
+            normalize_heading(self._last_heading.get(session_id, 90.0)),
+        )
         if not history or history[-1] != edge_id:
             history.append(edge_id)
+            self._features[session_id].append(feat)
             self._dwell_samples[session_id] = 1
         else:
             self._dwell_samples[session_id] += 1
-        if speed_mps is not None:
-            self._last_speed[session_id] = speed_mps
+            if self._features[session_id]:
+                self._features[session_id][-1] = feat
         if latitude is not None and longitude is not None:
             self._last_gps[session_id] = (latitude, longitude)
 
@@ -76,6 +91,9 @@ class SessionHistoryStore:
 
     def get_speed(self, session_id: str) -> Optional[float]:
         return self._last_speed.get(session_id)
+
+    def get_features(self, session_id: str) -> List[Tuple[float, float]]:
+        return list(self._features.get(session_id, []))
 
     def get_gps(self, session_id: str) -> Optional[Tuple[float, float]]:
         return self._last_gps.get(session_id)
@@ -105,7 +123,10 @@ class PredictorEngine:
         self.session_store = SessionHistoryStore()
         self.model: Optional[EdgePredictorGRU] = None
         self.traced_model = None
+        self.onnx_session = None
+        self.inference_backend = "none"
         self.baseline: Optional[DestinationMatrixBaseline] = None
+        self.training_metadata: Dict[str, object] = {}
 
         self._load_or_init_models()
 
@@ -121,17 +142,52 @@ class PredictorEngine:
             except Exception as exc:
                 print(f"Warning: failed to load baseline matrix ({exc})")
 
-        # 2. Check for exported TorchScript model
+        # 2. Prefer ONNX Runtime for live inference; TorchScript is fallback only.
         model_file = Path(self.config.model_path)
-        if model_file.exists():
+        onnx_file = model_file.with_suffix(".onnx")
+        require_onnx = os.getenv("PREVAIL_USE_ONNX", "1") != "0"
+        if onnx_file.exists():
+            try:
+                import onnxruntime as ort
+
+                self.onnx_session = ort.InferenceSession(
+                    str(onnx_file), providers=["CPUExecutionProvider"]
+                )
+                self.inference_backend = "onnx"
+                print(f"Loaded ONNX predictor from: {onnx_file}")
+            except Exception as exc:
+                print(f"Warning: failed to load ONNX model ({exc})")
+                if require_onnx:
+                    raise RuntimeError(f"PREVAIL_USE_ONNX=1 but ONNX load failed: {exc}") from exc
+        elif require_onnx:
+            raise RuntimeError(f"PREVAIL_USE_ONNX=1 but missing {onnx_file}")
+
+        if self.onnx_session is None and model_file.exists():
             try:
                 self.traced_model = torch.jit.load(str(model_file))
                 self.traced_model.eval()
+                self.inference_backend = "torchscript"
                 print(f"Loaded TorchScript predictor model from: {model_file}")
             except Exception as e:
                 print(f"Warning: Failed to load TorchScript model ({e}). Using PyTorch GRU instance.")
 
-        if self.traced_model is None:
+        meta_path = Path(self.config.model_path).with_name("training_metadata.json")
+        if meta_path.exists():
+            try:
+                self.training_metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+                print(f"Loaded training metadata: {self.training_metadata}")
+            except Exception as exc:
+                print(f"Warning: failed to read training metadata ({exc})")
+
+        require_official = os.getenv("PREVAIL_REQUIRE_OFFICIAL_MODEL") == "1"
+        if require_official and self.training_metadata.get("source") != "official":
+            raise RuntimeError(
+                "PREVAIL_REQUIRE_OFFICIAL_MODEL=1 but training_metadata.json is not official"
+            )
+        if require_official and self.onnx_session is None and self.traced_model is None:
+            raise RuntimeError("official GRU artifact missing; refusing untrained weights")
+
+        if self.onnx_session is None and self.traced_model is None:
             self.model = EdgePredictorGRU(
                 num_edges=len(self.edge_ids),
                 embedding_dim=16,
@@ -139,6 +195,7 @@ class PredictorEngine:
                 num_layers=1,
             )
             self.model.eval()
+            self.inference_backend = "untrained-gru"
 
     def predict(self, session_id: str, current_edge: Optional[str] = None, history: Optional[List[str]] = None) -> PredictionResponse:
         """Computes next-edge probability distribution for given session_id."""
@@ -154,11 +211,35 @@ class PredictorEngine:
 
         probabilities: Dict[str, float] = {}
 
-        if self.traced_model is not None and tokens:
+        feats = self.session_store.get_features(session_id)
+        if len(feats) < len(tokens):
+            feats = ([(0.4, 0.25)] * (len(tokens) - len(feats))) + feats
+        feats = feats[-len(tokens) :] if tokens else []
+
+        if self.onnx_session is not None and tokens:
+            try:
+                import numpy as np
+
+                inp = np.array([tokens], dtype=np.int64)
+                feat = np.array([feats], dtype=np.float32)
+                logits = self.onnx_session.run(
+                    ["logits"],
+                    {"input_sequence": inp, "input_features": feat},
+                )[0][0]
+                exp = np.exp(logits - np.max(logits))
+                probs_list = (exp / exp.sum()).tolist()
+                raw = {self.edge_ids[i]: float(probs_list[i]) for i in range(len(self.edge_ids))}
+                tot = sum(raw.values())
+                probabilities = {k: round(v / tot, 6) for k, v in raw.items()}
+            except Exception:
+                probabilities = {}
+
+        elif self.traced_model is not None and tokens:
             try:
                 with torch.no_grad():
                     inp = torch.tensor([tokens], dtype=torch.long)
-                    logits = self.traced_model(inp)[0]
+                    feat = torch.tensor([feats], dtype=torch.float32)
+                    logits = self.traced_model(inp, feat)[0]
                     probs_list = torch.softmax(logits, dim=-1).cpu().tolist()
                     raw = {self.edge_ids[i]: float(probs_list[i]) for i in range(len(self.edge_ids))}
                     tot = sum(raw.values())
@@ -167,7 +248,7 @@ class PredictorEngine:
                 probabilities = {}
 
         elif self.model is not None and tokens:
-            probabilities = self.model.predict_distribution(tokens, self.edge_ids)
+            probabilities = self.model.predict_distribution(tokens, self.edge_ids, features=feats)
 
         # If still empty or no history, use baseline or prior distribution
         if not probabilities or sum(probabilities.values()) == 0:
@@ -238,6 +319,11 @@ def health_check():
         "status": "healthy",
         "model_version": config.model_version,
         "edge_ids": config.edge_ids,
+        "model_loaded": engine.onnx_session is not None or engine.traced_model is not None,
+        "inference_backend": engine.inference_backend,
+        "onnx_loaded": engine.onnx_session is not None,
+        "training_source": engine.training_metadata.get("source"),
+        "sequence_count": engine.training_metadata.get("sequence_count"),
     }
 
 
@@ -265,5 +351,6 @@ def update_trajectory(update: TrajectoryUpdate):
         speed_mps=update.speed_mps,
         latitude=update.latitude,
         longitude=update.longitude,
+        heading_deg=update.heading_deg,
     )
     return {"status": "recorded", "session_id": update.session_id}

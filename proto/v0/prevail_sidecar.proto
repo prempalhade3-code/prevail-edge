@@ -13,6 +13,9 @@ service PrevailSidecar {
   rpc ReportLocation(TrajectorySample) returns (LocationAck);
   rpc GetAuthority(AuthorityQuery) returns (AuthorityState);
   rpc OnPromotion(PromotionNotice) returns (PromotionSidecarAck);
+  rpc ReportState(FlinkKeyedState) returns (StateAck);
+  rpc PullIngress(IngressQuery) returns (IngressBatch);
+  rpc RestoreState(RestoreQuery) returns (FlinkKeyedState);
 }
 
 message LocationAck {
@@ -40,4 +43,20 @@ message PromotionNotice {
 
 message PromotionSidecarAck {
   bool output_gate_updated = 1;
+}
+
+message StateAck {
+  bool accepted = 1;
+}
+
+message IngressQuery {
+  uint32 limit = 1;
+}
+
+message IngressBatch {
+  repeated TrajectorySample samples = 1;
+}
+
+message RestoreQuery {
+  string session_id = 1;
 }

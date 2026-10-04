@@ -1,9 +1,14 @@
 """Dataset generators and trajectory ingest utilities for edge sequence prediction."""
 
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 import torch
 from torch.utils.data import Dataset
+
+from python.predictor.model import normalize_heading, normalize_speed
+
+FeaturedStep = Tuple[str, float, float]  # edge, speed_mps, heading_deg
+SequenceLike = Union[List[str], List[FeaturedStep]]
 
 
 class SyntheticTrajectoryGenerator:
@@ -108,46 +113,74 @@ class SyntheticTrajectoryGenerator:
         ]
 
 
+def _as_featured(seq: SequenceLike) -> List[FeaturedStep]:
+    featured: List[FeaturedStep] = []
+    for step in seq:
+        if isinstance(step, str):
+            featured.append((step, 12.0, 90.0))
+        else:
+            edge, speed, heading = step
+            featured.append((str(edge), float(speed), float(heading)))
+    return featured
+
+
 class EdgeSequenceDataset(Dataset):
     """PyTorch Dataset for training GRU on prefix sequences to predict the next edge."""
 
     def __init__(
         self,
-        sequences: List[List[str]],
+        sequences: List[SequenceLike],
         edge_to_idx: Dict[str, int],
         min_prefix_len: int = 1,
         max_seq_len: int = 10,
     ):
-        self.samples: List[Tuple[List[int], int]] = []
+        self.samples: List[Tuple[List[int], List[Tuple[float, float]], int]] = []
         self.edge_to_idx = edge_to_idx
         self.max_seq_len = max_seq_len
 
         for seq in sequences:
-            if len(seq) < 2:
+            featured = _as_featured(seq)
+            if len(featured) < 2:
                 continue
-            token_ids = [self.edge_to_idx[e] for e in seq if e in self.edge_to_idx]
-            for i in range(min_prefix_len, len(token_ids)):
-                prefix = token_ids[max(0, i - max_seq_len) : i]
-                target = token_ids[i] - 1  # 0-indexed for CrossEntropyLoss
-                self.samples.append((prefix, target))
+            tokens: List[int] = []
+            feats: List[Tuple[float, float]] = []
+            for edge, speed, heading in featured:
+                if edge not in self.edge_to_idx:
+                    continue
+                tokens.append(self.edge_to_idx[edge])
+                feats.append((normalize_speed(speed), normalize_heading(heading)))
+            for i in range(min_prefix_len, len(tokens)):
+                start = max(0, i - max_seq_len)
+                prefix = tokens[start:i]
+                prefix_feat = feats[start:i]
+                target = tokens[i] - 1  # 0-indexed for CrossEntropyLoss
+                self.samples.append((prefix, prefix_feat, target))
 
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        prefix, target = self.samples[idx]
-        return torch.tensor(prefix, dtype=torch.long), torch.tensor(target, dtype=torch.long)
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        prefix, feats, target = self.samples[idx]
+        return (
+            torch.tensor(prefix, dtype=torch.long),
+            torch.tensor(feats, dtype=torch.float32),
+            torch.tensor(target, dtype=torch.long),
+        )
 
 
-def collate_sequence_batch(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Collates variable-length prefix sequences into a zero-padded batch tensor."""
-    prefixes, targets = zip(*batch)
+def collate_sequence_batch(
+    batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Collates variable-length prefix sequences and speed/heading features."""
+    prefixes, feats, targets = zip(*batch)
     max_len = max(len(p) for p in prefixes)
     padded_prefixes = torch.zeros((len(prefixes), max_len), dtype=torch.long)
-    for i, p in enumerate(prefixes):
-        padded_prefixes[i, -len(p) :] = p  # Left pad with 0 (padding idx)
+    padded_feats = torch.zeros((len(prefixes), max_len, 2), dtype=torch.float32)
+    for i, (p, f) in enumerate(zip(prefixes, feats)):
+        padded_prefixes[i, -len(p) :] = p
+        padded_feats[i, -len(f) :] = f
     target_tensor = torch.tensor(targets, dtype=torch.long)
-    return padded_prefixes, target_tensor
+    return padded_prefixes, padded_feats, target_tensor
 
 
 def parse_gps_trajectory_to_edge_sequence(

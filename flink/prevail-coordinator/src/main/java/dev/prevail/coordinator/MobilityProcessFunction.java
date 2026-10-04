@@ -5,17 +5,34 @@ import org.apache.flink.util.Collector;
 
 /**
  * PREVAIL mobility hook — gates official output on sidecar authority (ADR-004).
- * Stream parsing and keyed state live in Ram's {@code flink/prevail-job/}.
+ * Uses generated Java protobuf / gRPC types exclusively.
  */
 public class MobilityProcessFunction extends ProcessFunction<String, String> {
     private transient SidecarClient sidecar;
     private transient String sessionId;
+    private final String sidecarTarget;
+
+    public MobilityProcessFunction() {
+        this(System.getenv().getOrDefault("PREVAIL_SIDECAR_GRPC", "127.0.0.1:50051"));
+    }
+
+    public MobilityProcessFunction(String sidecarTarget) {
+        this.sidecarTarget = sidecarTarget == null || sidecarTarget.isBlank()
+                ? System.getenv().getOrDefault("PREVAIL_SIDECAR_GRPC", "127.0.0.1:50051")
+                : sidecarTarget;
+    }
 
     @Override
     public void open(org.apache.flink.configuration.Configuration parameters) {
-        String sidecarUrl = System.getenv().getOrDefault("PREVAIL_SIDECAR_URL", "http://127.0.0.1:8090");
-        sidecar = new SidecarClient(sidecarUrl);
+        sidecar = new SidecarClient(sidecarTarget);
         sessionId = SessionConfig.load().sessionId();
+    }
+
+    @Override
+    public void close() {
+        if (sidecar != null) {
+            sidecar.close();
+        }
     }
 
     @Override
@@ -24,6 +41,5 @@ public class MobilityProcessFunction extends ProcessFunction<String, String> {
         if (auth.outputEnabled()) {
             out.collect(value);
         }
-        // Shadow path: suppressed when output_enabled is false
     }
 }

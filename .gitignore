@@ -45,6 +45,8 @@ python/predictor/runs/
 *.pt
 *.pth
 !python/predictor/models/.gitkeep
+!python/predictor/models/gru_predictor.pt
+!python/predictor/models/baseline_matrix.json
 
 # Docker
 *.log
@@ -52,6 +54,11 @@ python/predictor/runs/
 # SUMO / sim outputs (large)
 sim/output/
 experiments/results/
+experiments/checkpoints/
+experiments/flink-sink/
+experiments/prevail-timeline.db
+python/predictor/data/official/
+python/predictor/data/*.csv
 *.fcd.xml
 *.rou.xml
 

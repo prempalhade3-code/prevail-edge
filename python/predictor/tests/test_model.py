@@ -17,7 +17,8 @@ def test_gru_forward_and_prediction():
 
     # Forward pass with batch_size=2, seq_len=4
     dummy_input = torch.tensor([[1, 2, 3, 4], [2, 3, 1, 2]], dtype=torch.long)
-    logits = model(dummy_input)
+    dummy_feat = torch.zeros(2, 4, 2)
+    logits = model(dummy_input, dummy_feat)
     assert logits.shape == (2, len(edge_ids))
 
     # Predict distribution for single sequence
@@ -40,6 +41,17 @@ def test_gru_torchscript_export_size():
         assert os.path.exists(export_path)
         file_size_kb = os.path.getsize(export_path) / 1024.0
         assert file_size_kb < 1024.0  # Must be under 1 MB
+        onnx_path = os.path.join(tmpdir, "model_test.onnx")
+        model.export_onnx(onnx_path)
+        assert os.path.exists(onnx_path)
+        assert os.path.getsize(onnx_path) > 64
+        onnxruntime = pytest.importorskip("onnxruntime")
+        sess = onnxruntime.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        import numpy as np
+        tokens = np.array([[1, 2, 3, 4]], dtype=np.int64)
+        feats = np.zeros((1, 4, 2), dtype=np.float32)
+        logits = sess.run(["logits"], {"input_sequence": tokens, "input_features": feats})[0]
+        assert logits.shape == (1, 4)
 
 
 def test_destination_matrix_baseline():

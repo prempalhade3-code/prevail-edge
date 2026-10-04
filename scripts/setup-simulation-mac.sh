@@ -54,7 +54,10 @@ PREVAIL_RUNTIME_URL=http://127.0.0.1:8090 "$VENV_PY" -m prevail_backend.main &
 sleep 2
 
 cd "$ROOT"
-PREVAIL_RUNTIME_URL=http://127.0.0.1:8090 python3 sim/vehicle/road_simulator.py &
+PREVAIL_TRAJECTORY_URL=http://127.0.0.1:8090/v1/trajectory \
+  PREVAIL_TRAFFIC_URL=http://127.0.0.1:8090/v1/traffic \
+  PREVAIL_SESSION_ID=sim-vehicle-01 \
+  PYTHONPATH="$ROOT" python3 -m sim.vehicle.sumo_live &
 sleep 2
 
 curl -sf http://127.0.0.1:8090/health >/dev/null && curl -sf http://127.0.0.1:8000/health >/dev/null \

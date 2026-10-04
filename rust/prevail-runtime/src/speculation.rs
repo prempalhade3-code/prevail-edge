@@ -15,6 +15,20 @@ pub fn evaluate_speculation(
     capabilities: &HashMap<String, EdgeCapability>,
     config: &SpeculationConfig,
 ) -> SpeculationDecision {
+    if !config.speculation_enabled || config.mode != "prevail" {
+        return SpeculationDecision {
+            should_speculate: false,
+            target_edge_ids: vec![],
+            reason: format!("speculation disabled (mode={})", config.mode),
+        };
+    }
+    if prediction.model_version.contains("degraded") || prediction.eta_sec.is_none() {
+        return SpeculationDecision {
+            should_speculate: false,
+            target_edge_ids: vec![],
+            reason: "predictor unavailable — skip speculation".into(),
+        };
+    }
     let eta = prediction.eta_sec.unwrap_or(0.0);
     let min_time = config.estimated_sync_sec + config.promotion_margin_sec;
     if eta > 0.0 && eta < min_time {
@@ -41,12 +55,17 @@ pub fn evaluate_speculation(
         if prob < config.min_confidence {
             continue;
         }
-        if let Some(cap) = capabilities.get(&edge_id) {
-            if config.require_image_capability && !cap.supports_image {
-                continue;
-            }
-            if cap.cpu_available_ratio < 0.05 || cap.memory_available_ratio < 0.05 {
-                continue;
+        if config.capability_check_enabled {
+            if let Some(cap) = capabilities.get(&edge_id) {
+                if config.require_image_capability && !cap.supports_image {
+                    continue;
+                }
+                if !cap.supports_stream && !config.require_image_capability {
+                    continue;
+                }
+                if cap.cpu_available_ratio < 0.05 || cap.memory_available_ratio < 0.05 {
+                    continue;
+                }
             }
         }
         targets.push(edge_id);
@@ -106,6 +125,7 @@ mod tests {
                 edge_id: "edge-d".into(),
                 supports_stream: true,
                 supports_image: false,
+                supports_video: false,
                 supports_gpu: false,
                 cpu_available_ratio: 0.5,
                 memory_available_ratio: 0.5,
@@ -124,6 +144,21 @@ mod tests {
     }
 
     #[test]
+    fn predictor_down_skips_speculation() {
+        let mut p = pred(&[("edge-b", 0.25)], 20.0);
+        p.model_version = "degraded-unavailable".into();
+        p.eta_sec = None;
+        let d = evaluate_speculation(
+            &p,
+            "edge-a",
+            &HashMap::new(),
+            &SpeculationConfig::default(),
+        );
+        assert!(!d.should_speculate);
+        assert!(d.reason.contains("unavailable"));
+    }
+
+    #[test]
     fn selects_top_confident_edge() {
         let mut caps = HashMap::new();
         caps.insert(
@@ -132,6 +167,7 @@ mod tests {
                 edge_id: "edge-b".into(),
                 supports_stream: true,
                 supports_image: true,
+                supports_video: false,
                 supports_gpu: false,
                 cpu_available_ratio: 0.5,
                 memory_available_ratio: 0.5,

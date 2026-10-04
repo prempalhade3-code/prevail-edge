@@ -28,7 +28,16 @@
         "AuthorityTransferRejected",
         "AuthorityTransferred",
         "EdgePromoted",
-        "EdgeDemoted"
+        "EdgeDemoted",
+        "WrongPrediction",
+        "PromotionAck",
+        "MigrationFallbackStart",
+        "MigrationFallbackComplete",
+        "FlinkStateAligned",
+        "FlinkOutputGateUpdated",
+        "SpeculationDecision",
+        "ShadowRecreated",
+        "AuthorityFailover"
       ]
     },
     "edge_id": { "type": "string" },

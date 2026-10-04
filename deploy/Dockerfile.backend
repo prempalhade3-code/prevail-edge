@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+COPY backend/prevail_backend /app/prevail_backend
+COPY python /app/python
+COPY deploy/config /app/deploy/config
+COPY frontend/demo.html /app/frontend/demo.html
+ENV PYTHONPATH=/app
+ENV PREVAIL_API_HOST=0.0.0.0
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "prevail_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

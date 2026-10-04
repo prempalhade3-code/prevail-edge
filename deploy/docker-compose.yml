@@ -1,7 +1,29 @@
-version: '3.8'
+version: "3.8"
 
-# Infrastructure services for PREVAIL. Edge runtimes are started on the host
-# via scripts/run-edge-mesh.sh / scripts/run-prevail-demo.sh (Rust QUIC mesh).
+x-edge-env: &edge-env
+  PREVAIL_RUNTIME_HOST: "0.0.0.0"
+  PREVAIL_RUNTIME_PORT: "8090"
+  PREVAIL_SIDECAR_GRPC_HOST: "0.0.0.0"
+  PREVAIL_SIDECAR_GRPC_PORT: "50051"
+  PREVAIL_LIVE_SIM: "1"
+  PREVAIL_MESH_PEERS: "edge-a=edge-a:9101,edge-b=edge-b:9101,edge-c=edge-c:9101,edge-d=edge-d:9101"
+  PREVAIL_EDGE_HTTP_URLS: "edge-a=http://edge-a:8090,edge-b=http://edge-b:8090,edge-c=http://edge-c:8090,edge-d=http://edge-d:8090"
+  PREVAIL_PREDICTOR_URL: "http://host.docker.internal:8091"
+  PREVAIL_SPECULATION_MAX_SHADOWS: "2"
+  PREVAIL_SPECULATION_MIN_CONFIDENCE: "0.25"
+  PREVAIL_OBSERVABILITY_URL: "http://backend:8000"
+  PREVAIL_EDGE_REGIONS_PATH: /app/deploy/config/edge-regions.json
+  PREVAIL_EDGE_CAPABILITIES_PATH: /app/deploy/config/edge-capabilities.json
+  PREVAIL_SESSION_CONFIG_PATH: /app/deploy/config/session.json
+  JOB_MANAGER_RPC_ADDRESS: jobmanager
+  PREVAIL_SIDECAR_GRPC_URLS: "edge-a=edge-a:50051,edge-b=edge-b:50051,edge-c=edge-c:50051,edge-d=edge-d:50051"
+  PREVAIL_FLINK_REST: "http://jobmanager:8081"
+  PREVAIL_FLINK_JAR: "/opt/prevail/prevail-job.jar"
+  PREVAIL_FLINK_SIDECAR: "127.0.0.1:50051"
+  PREVAIL_FLINK_SINK: "/var/prevail/sink"
+  PREVAIL_BOOTSTRAP_EDGE_ID: "edge-a"
+  PREVAIL_MULTICAST_GROUP: "239.20.20.1:47000"
+  PREVAIL_CAPABILITY_CHECK_ENABLED: "1"
 
 services:
   postgres:
@@ -13,35 +35,290 @@ services:
       POSTGRES_USER: prevail
       POSTGRES_PASSWORD: prevail_password
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    mem_limit: 160m
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prevail -d prevail"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 8
     networks:
       - prevail-net
 
   predictor:
+    profiles: ["predictor"]
     build:
       context: ..
       dockerfile: python/predictor/Dockerfile
     container_name: prevail-predictor
     hostname: predictor
-    ports:
-      - "8091:8091"
     environment:
       PREVAIL_EDGE_REGIONS_PATH: /app/deploy/config/edge-regions.json
+      PREVAIL_REQUIRE_OFFICIAL_MODEL: "1"
+      PREVAIL_USE_ONNX: "1"
+    ports:
+      - "8091:8091"
     volumes:
       - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8091/health')\""]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 30s
+      retries: 8
+      start_period: 40s
+    networks:
+      - prevail-net
+
+  flink-jobmanager:
+    image: flink:1.18.1-java17
+    container_name: prevail-flink-jm
+    hostname: jobmanager
+    command: jobmanager
+    environment:
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        jobmanager.memory.process.size: 384m
+        jobmanager.memory.jvm-metaspace.size: 64m
+        jobmanager.memory.jvm-overhead.min: 32m
+        jobmanager.memory.jvm-overhead.max: 48m
+        parallelism.default: 1
+        cluster.evenly-spread-out-slots: true
+        cluster.fine-grained-resource-management.enabled: true
+        state.checkpoints.dir: file:///var/prevail/checkpoints
+        state.checkpoints.num-retained: 5
+        execution.checkpointing.interval: 5s
+    ports:
+      - "8081:8081"
+    mem_limit: 448m
+    volumes:
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081'"]
+      interval: 8s
+      timeout: 4s
+      retries: 12
+    networks:
+      - prevail-net
+
+  edge-a:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.edge
+    container_name: prevail-edge-a
+    hostname: edge-a
+    environment:
+      <<: *edge-env
+      PREVAIL_EDGE_ID: edge-a
+      PREVAIL_CHECKPOINT_DIR: /var/prevail/checkpoints/edge-a
+    ports:
+      - "8090:8090"
+      - "9101:9101"
+      - "50051:50051"
+    mem_limit: 640m
+    cpus: 0.45
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    volumes:
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+    networks:
+      - prevail-net
+
+  edge-b:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.edge
+    container_name: prevail-edge-b
+    hostname: edge-b
+    environment:
+      <<: *edge-env
+      PREVAIL_EDGE_ID: edge-b
+      PREVAIL_CHECKPOINT_DIR: /var/prevail/checkpoints/edge-b
+    ports:
+      - "8092:8090"
+      - "9102:9101"
+      - "50052:50051"
+    mem_limit: 640m
+    cpus: 0.45
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    volumes:
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+    networks:
+      - prevail-net
+
+  edge-c:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.edge
+    container_name: prevail-edge-c
+    hostname: edge-c
+    environment:
+      <<: *edge-env
+      PREVAIL_EDGE_ID: edge-c
+      PREVAIL_CHECKPOINT_DIR: /var/prevail/checkpoints/edge-c
+    ports:
+      - "8094:8090"
+      - "9103:9101"
+      - "50053:50051"
+    mem_limit: 640m
+    cpus: 0.45
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    volumes:
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+    networks:
+      - prevail-net
+
+  edge-d:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.edge
+    container_name: prevail-edge-d
+    hostname: edge-d
+    environment:
+      <<: *edge-env
+      PREVAIL_EDGE_ID: edge-d
+      PREVAIL_CHECKPOINT_DIR: /var/prevail/checkpoints/edge-d
+    ports:
+      - "8096:8090"
+      - "9104:9101"
+      - "50054:50051"
+    mem_limit: 640m
+    cpus: 0.45
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    volumes:
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
+      interval: 8s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+    networks:
+      - prevail-net
+
+  flink-submit:
+    image: deploy-edge-a
+    container_name: prevail-flink-submit
+    hostname: flink-submit
+    user: root
+    entrypoint: ["/bin/bash", "/opt/prevail/submit-flink-jobs.sh"]
+    depends_on:
+      edge-a:
+        condition: service_started
+      edge-b:
+        condition: service_started
+      edge-c:
+        condition: service_started
+      edge-d:
+        condition: service_started
+      flink-jobmanager:
+        condition: service_started
+    environment:
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      PREVAIL_JOB_JAR: /opt/prevail/prevail-job.jar
+      PREVAIL_BOOTSTRAP_EDGE_ID: edge-a
+    volumes:
+      - ../flink/prevail-job/target/prevail-job-0.1.0-SNAPSHOT.jar:/opt/prevail/prevail-job.jar:ro
+      - ./submit-flink-jobs.sh:/opt/prevail/submit-flink-jobs.sh:ro
+      - ../experiments/checkpoints:/var/prevail/checkpoints
+      - ../experiments/flink-sink:/var/prevail/sink
+    mem_limit: 256m
+    networks:
+      - prevail-net
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    container_name: prevail-backend
+    hostname: backend
+    environment:
+      PREVAIL_RUNTIME_URL: http://edge-a:8090
+      PREVAIL_EDGE_URLS: "edge-a=http://edge-a:8090,edge-b=http://edge-b:8090,edge-c=http://edge-c:8090,edge-d=http://edge-d:8090"
+      PREVAIL_DATABASE_URL: postgresql://prevail:prevail_password@postgres:5432/prevail
+      PREVAIL_REQUIRE_POSTGRES: "1"
+    ports:
+      - "8000:8000"
+    mem_limit: 256m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      edge-a:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 8s
+      timeout: 4s
+      retries: 10
+    networks:
+      - prevail-net
+
+  sumo:
+    profiles: ["sumo"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.sumo
+    container_name: prevail-sumo
+    hostname: sumo
+    environment:
+      PREVAIL_TRAJECTORY_URL: http://edge-a:8090/v1/trajectory
+      PREVAIL_TRAFFIC_URL: http://edge-a:8090/v1/traffic
+      PREVAIL_SESSION_ID: sim-vehicle-01
+      PREVAIL_EDGE_REGIONS_PATH: /app/deploy/config/edge-regions.json
+      SUMO_HOME: /usr/share/sumo
+    depends_on:
+      edge-a:
+        condition: service_healthy
     networks:
       - prevail-net
 

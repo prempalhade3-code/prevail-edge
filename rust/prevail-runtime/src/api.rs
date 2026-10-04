@@ -27,14 +27,21 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/topology", get(topology))
         .route("/v1/current-node", get(current_node))
+        .route("/v1/authority-token", get(authority_token))
         .route("/v1/prediction", get(prediction))
         .route("/v1/shadows", get(shadows))
         .route("/v1/events", get(events))
         .route("/v1/metrics", get(metrics))
-        .route("/v1/demo/advance", post(advance_demo))
         .route("/v1/trajectory", post(ingest_trajectory))
+        .route("/v1/session/reset", post(reset_session))
+        .route("/v1/test/prediction", post(test_prediction))
+        .route("/v1/flink/ingress", get(flink_ingress))
+        .route("/v1/flink/restore", get(flink_restore).post(flink_restore_post))
         .route("/v1/traffic", post(update_traffic))
         .route("/v1/sidecar/authority", get(sidecar_authority))
+        .route("/v1/sidecar/location", post(sidecar_location))
+        .route("/v1/sidecar/promotion", post(sidecar_promotion))
+        .route("/v1/sidecar/state", post(sidecar_state).get(sidecar_state_get))
         .route("/ws/live", get(ws_live))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -69,6 +76,22 @@ async fn current_node(State(state): State<AppState>) -> impl IntoResponse {
         "authority_holder": rt.snapshot().authority.holder_edge_id,
         "epoch": rt.snapshot().authority.epoch,
         "output_suppressed": rt.output_suppressed(),
+        "authority_reconciled": rt.is_authority_reconciled(),
+    }))
+}
+
+async fn authority_token(State(state): State<AppState>) -> impl IntoResponse {
+    let rt = state.runtime.read().await;
+    let token = rt.authority_token();
+    Json(serde_json::json!({
+        "session_id": token.session_id,
+        "epoch": token.epoch,
+        "holder_edge_id": token.holder_edge_id,
+        "signature": token.signature,
+        "is_authoritative": rt.is_authoritative(),
+        "is_warm_shadow": matches!(rt.local_role(), ShadowRole::WarmShadow),
+        "authority_reconciled": rt.is_authority_reconciled(),
+        "local_edge_id": rt.local_edge_id(),
     }))
 }
 
@@ -101,9 +124,30 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
-async fn advance_demo(State(state): State<AppState>) -> impl IntoResponse {
+async fn reset_session(State(state): State<AppState>) -> impl IntoResponse {
     let mut rt = state.runtime.write().await;
-    rt.advance_demo().await;
+    rt.reset_session();
+    Json(rt.snapshot())
+}
+
+#[derive(Deserialize)]
+struct TestPredictionBody {
+    probabilities: std::collections::HashMap<String, f64>,
+    eta_sec: Option<f64>,
+    requires_image: Option<bool>,
+}
+
+async fn test_prediction(
+    State(state): State<AppState>,
+    Json(body): Json<TestPredictionBody>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    rt.apply_test_prediction(
+        body.probabilities,
+        body.eta_sec.unwrap_or(30.0),
+        body.requires_image.unwrap_or(false),
+    );
+    rt.run_speculation_cycle().await;
     Json(rt.snapshot())
 }
 
@@ -128,6 +172,87 @@ async fn update_traffic(
 #[derive(Deserialize)]
 struct SidecarQuery {
     session_id: Option<String>,
+}
+
+async fn sidecar_location(
+    State(state): State<AppState>,
+    Json(sample): Json<TrajectorySample>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    rt.on_trajectory(sample).await;
+    let snap = rt.snapshot();
+    Json(serde_json::json!({
+        "accepted": true,
+        "current_authoritative_edge": snap.authority.holder_edge_id,
+    }))
+}
+
+#[derive(Deserialize)]
+struct PromotionBody {
+    session_id: String,
+    new_holder_edge_id: String,
+    epoch: u64,
+}
+
+async fn sidecar_promotion(
+    State(state): State<AppState>,
+    Json(body): Json<PromotionBody>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    rt.on_flink_promotion(&body.session_id, &body.new_holder_edge_id, body.epoch);
+    Json(serde_json::json!({ "output_gate_updated": true }))
+}
+
+#[derive(Deserialize)]
+struct FlinkStateBody {
+    session_id: String,
+    version: Option<u64>,
+    current_edge: Option<String>,
+    sample_count: Option<i64>,
+    speed_sum: Option<f64>,
+}
+
+async fn sidecar_state(
+    State(state): State<AppState>,
+    Json(body): Json<FlinkStateBody>,
+) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    let mut keyed = rt.keyed_state().clone();
+    keyed.session_id = body.session_id;
+    if let Some(v) = body.version {
+        keyed.version = v;
+    }
+    if let Some(edge) = body.current_edge {
+        keyed.current_edge = edge;
+    }
+    if let Some(c) = body.sample_count {
+        keyed.sample_count = c;
+    }
+    if let Some(s) = body.speed_sum {
+        keyed.speed_sum = s;
+    }
+    rt.apply_flink_state(keyed);
+    Json(serde_json::json!({ "accepted": true }))
+}
+
+async fn sidecar_state_get(State(state): State<AppState>) -> impl IntoResponse {
+    let rt = state.runtime.read().await;
+    Json(rt.keyed_state().clone())
+}
+
+async fn flink_ingress(State(state): State<AppState>) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    Json(rt.drain_flink_ingress(64))
+}
+
+async fn flink_restore(State(state): State<AppState>) -> impl IntoResponse {
+    let rt = state.runtime.read().await;
+    Json(rt.flink_restore_state())
+}
+
+async fn flink_restore_post(State(state): State<AppState>) -> impl IntoResponse {
+    let mut rt = state.runtime.write().await;
+    Json(rt.take_pending_flink_restore())
 }
 
 async fn sidecar_authority(

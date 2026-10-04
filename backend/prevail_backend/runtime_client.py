@@ -22,9 +22,6 @@ class RuntimeClient:
     async def snapshot(self):
         return await self.get("/v1/snapshot")
 
-    async def advance_demo(self):
-        return await self.post("/v1/demo/advance")
-
     async def ingest_trajectory(self, sample: dict):
         return await self.post("/v1/trajectory", sample)
 
