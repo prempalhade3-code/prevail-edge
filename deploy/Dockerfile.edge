@@ -1,0 +1,39 @@
+# Linux/ARM64 runtime for Apple Silicon. Do not copy a macOS Mach-O binary.
+FROM rust:1-bookworm AS runtime-build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY proto /src/proto
+COPY rust/prevail-runtime /src/rust/prevail-runtime
+WORKDIR /src/rust/prevail-runtime
+ENV CARGO_TERM_COLOR=never
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/rust/prevail-runtime/target \
+    cargo build --release \
+    && cp /src/rust/prevail-runtime/target/release/prevail-runtime /prevail-runtime
+
+FROM flink:1.18.1-java17
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl iptables iproute2 procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=runtime-build /prevail-runtime /usr/local/bin/prevail-runtime
+COPY flink/prevail-job/target/prevail-job-0.1.0-SNAPSHOT.jar /opt/prevail/prevail-job.jar
+COPY deploy/config /app/deploy/config
+COPY deploy/edge-entrypoint.sh /opt/prevail/edge-entrypoint.sh
+RUN chmod +x /usr/local/bin/prevail-runtime /opt/prevail/edge-entrypoint.sh \
+    && mkdir -p /var/prevail/checkpoints /var/prevail/sink \
+    && test -x /usr/local/bin/prevail-runtime
+
+WORKDIR /app
+ENV PREVAIL_EDGE_REGIONS_PATH=/app/deploy/config/edge-regions.json
+ENV PREVAIL_EDGE_CAPABILITIES_PATH=/app/deploy/config/edge-capabilities.json
+ENV PREVAIL_SESSION_CONFIG_PATH=/app/deploy/config/session.json
+ENV PREVAIL_LIVE_SIM=1
+ENV PREVAIL_RUNTIME_HOST=0.0.0.0
+ENV PREVAIL_SIDECAR_GRPC_HOST=0.0.0.0
+EXPOSE 8090 9101 50051 6122
+
+ENTRYPOINT ["/opt/prevail/edge-entrypoint.sh"]

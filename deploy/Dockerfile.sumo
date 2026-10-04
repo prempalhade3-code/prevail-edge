@@ -1,0 +1,11 @@
+FROM python:3.11-bookworm
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends sumo sumo-tools \
+    && rm -rf /var/lib/apt/lists/*
+COPY python/ /app/python/
+COPY sim/ /app/sim/
+COPY deploy/config /app/deploy/config
+ENV PYTHONPATH=/app
+ENV SUMO_HOME=/usr/share/sumo
+ENV PREVAIL_EDGE_REGIONS_PATH=/app/deploy/config/edge-regions.json
+CMD ["python", "-m", "sim.vehicle.sumo_live"]
