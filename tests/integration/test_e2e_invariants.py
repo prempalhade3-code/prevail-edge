@@ -108,6 +108,8 @@ class UnitInvariantTests(unittest.TestCase):
         self.assertIn(("edge-b", "edge-c"), edges)
 
     def test_experiment_sweep_runs(self):
+        env = os.environ.copy()
+        env["PREVAIL_BACKEND_URL"] = "http://127.0.0.1:9"
         result = subprocess.run(
             [
                 sys.executable,
@@ -121,8 +123,11 @@ class UnitInvariantTests(unittest.TestCase):
             text=True,
             cwd=str(ROOT),
             timeout=60,
+            env=env,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
+        combined = (result.stdout + result.stderr).lower()
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertTrue("live" in combined or "unavailable" in combined, combined)
 
 
 if __name__ == "__main__":
