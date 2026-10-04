@@ -28,13 +28,18 @@ reqwest = { version = "0.12", features = ["json"] }
 async-trait = "0.1"
 bytes = "1"
 prost = "0.13"
+tonic = { version = "0.12", features = ["transport"] }
 quinn = "0.11"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pki-types = "1"
 rcgen = "0.13"
+sha2 = "0.10"
+hex = "0.4"
+socket2 = { version = "0.5", features = ["all"] }
 
 [build-dependencies]
 prost-build = "0.13"
+tonic-build = "0.12"
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -1,24 +1,22 @@
 use std::path::PathBuf;
 
-/// Compiles the shared control-plane contract in `proto/v0` into Rust types.
-///
-/// The protos live at the repository root because the Flink and Python sides
-/// consume the same files; generating from that one copy is what keeps the
-/// wire format from forking per language.
+/// Compiles the shared control-plane and sidecar contracts in `proto/v0`.
 fn main() {
     let proto_root = resolve_proto_root();
     let control = proto_root.join("v0").join("prevail_control.proto");
+    let sidecar = proto_root.join("v0").join("prevail_sidecar.proto");
 
     println!("cargo:rerun-if-changed={}", control.display());
+    println!("cargo:rerun-if-changed={}", sidecar.display());
     println!("cargo:rerun-if-changed={}", proto_root.display());
 
-    prost_build::Config::new()
-        .compile_protos(&[control], &[proto_root])
-        .expect("failed to compile prevail control protos");
+    tonic_build::configure()
+        .build_server(true)
+        .build_client(false)
+        .compile_protos(&[control, sidecar], &[proto_root])
+        .expect("failed to compile prevail protos");
 }
 
-/// Walks up from the crate directory to find `proto/v0`, so the build works
-/// from the crate, the workspace, or the repository root.
 fn resolve_proto_root() -> PathBuf {
     if let Ok(explicit) = std::env::var("PREVAIL_PROTO_ROOT") {
         return PathBuf::from(explicit);
