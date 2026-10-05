@@ -130,6 +130,7 @@ services:
     volumes:
       - ../experiments/checkpoints:/var/prevail/checkpoints
       - ../experiments/flink-sink:/var/prevail/sink
+      - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
       interval: 8s
@@ -165,6 +166,7 @@ services:
     volumes:
       - ../experiments/checkpoints:/var/prevail/checkpoints
       - ../experiments/flink-sink:/var/prevail/sink
+      - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
       interval: 8s
@@ -200,6 +202,7 @@ services:
     volumes:
       - ../experiments/checkpoints:/var/prevail/checkpoints
       - ../experiments/flink-sink:/var/prevail/sink
+      - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
       interval: 8s
@@ -235,6 +238,7 @@ services:
     volumes:
       - ../experiments/checkpoints:/var/prevail/checkpoints
       - ../experiments/flink-sink:/var/prevail/sink
+      - ./config/edge-regions.json:/app/deploy/config/edge-regions.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8090/health || exit 1"]
       interval: 8s
@@ -287,6 +291,10 @@ services:
       PREVAIL_REQUIRE_POSTGRES: "1"
     ports:
       - "8000:8000"
+    volumes:
+      - ../backend/prevail_backend:/app/prevail_backend
+      - ../python:/app/python
+      - ./config:/app/deploy/config
     mem_limit: 256m
     extra_hosts:
       - "host.docker.internal:host-gateway"
