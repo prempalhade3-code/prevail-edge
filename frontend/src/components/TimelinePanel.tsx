@@ -1,15 +1,13 @@
 import type { TimelineEvent } from "../types";
 
-const SKIP = new Set(["ShadowSyncUpdate"]);
-
 export function TimelinePanel({ events }: { events: TimelineEvent[] }) {
   const ordered = [...events]
     .reverse()
-    .filter((e) => !SKIP.has(e.event_type))
-    .slice(0, 8);
+    .filter((e) => e.event_type !== "ResourceSnapshot")
+    .slice(0, 10);
 
   return (
-    <div className="hud-panel max-h-72 overflow-y-auto p-4">
+    <div className="hud-panel max-h-40 overflow-y-auto p-3">
       <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Timeline</h2>
       <ul className="space-y-2">
         {ordered.map((e, i) => (
