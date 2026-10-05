@@ -75,5 +75,7 @@ pub fn degraded_prediction(session_id: &str) -> PredictionResult {
         probabilities,
         eta_sec: None,
         computed_at_ms: now,
+        for_edge: None,
+        route_terminal: false,
     }
 }
