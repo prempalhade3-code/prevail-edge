@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PREVAIL live demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #09090b; color: #fafafa; font-family: Outfit, Inter, system-ui, sans-serif; }
+      #app { display: flex; flex-direction: column; height: 100%; }
+      header, footer { border-color: rgba(255,255,255,.1); }
+      header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,.1); }
+      header p { margin: 0; font-size: 10px; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.4); }
+      header h1 { margin: 2px 0 0; font-size: 18px; }
+      .status { display: flex; gap: 10px; align-items: center; font-size: 12px; color: rgba(255,255,255,.55); font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      .pill { border-radius: 999px; padding: 4px 10px; font-family: Outfit, sans-serif; }
+      .ok { background: rgba(16,185,129,.15); color: #6ee7b7; }
+      .bad { background: rgba(244,63,94,.15); color: #fda4af; }
+      .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 360px; }
+      #map { height: 100%; background: #09090b; }
+      .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
+      .map-wrap { position: relative; min-height: 0; }
+      .map-actions { position: absolute; left: 12px; top: 12px; z-index: 1000; display: flex; gap: 8px; }
+      button { border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; font: 500 13px Outfit, sans-serif; }
+      .primary { background: #0ea5e9; color: #09090b; }
+      .ghost { background: rgba(9,9,11,.72); color: #fff; border: 1px solid rgba(255,255,255,.15); }
+      aside { overflow: auto; padding: 16px; border-left: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 12px; }
+      .card { border: 1px solid rgba(255,255,255,.1); background: rgba(9,9,11,.75); border-radius: 16px; padding: 14px; }
+      .card h2 { margin: 0 0 8px; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: rgba(255,255,255,.45); }
+      .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      .big { font-size: 24px; font-weight: 600; }
+      .muted { color: rgba(255,255,255,.5); font-size: 13px; }
+      .bar { height: 6px; background: rgba(255,255,255,.1); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+      .bar > span { display: block; height: 100%; background: #38bdf8; }
+      .bar.warm > span { background: #fbbf24; }
+      .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+      footer { border-top: 1px solid rgba(255,255,255,.1); padding: 12px; }
+      .events { max-height: 160px; overflow: auto; display: grid; gap: 8px; }
+      .event { border-left: 2px solid rgba(56,189,248,.6); padding-left: 10px; }
+      .banner { position: absolute; left: 12px; bottom: 12px; z-index: 1000; background: rgba(76,29,29,.85); color: #fecaca; padding: 8px 10px; border-radius: 10px; font-size: 13px; display: none; }
+      .auth { color: #6ee7b7; }
+      .warm { color: #fcd34d; }
+      .idle { color: rgba(255,255,255,.5); }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <div>
+          <p>PREVAIL live demo</p>
+          <h1>Bangalore corridor · 2D</h1>
+        </div>
+        <div class="status">
+          <span id="conn" class="pill bad">disconnected</span>
+          <span id="meta">waiting for backend</span>
+        </div>
+      </header>
+      <div class="layout">
+        <section class="map-wrap">
+          <div id="map"></div>
+          <div class="map-actions">
+            <button class="primary" id="driveBtn" type="button">Drive A → D</button>
+            <button class="ghost" id="followBtn" type="button">Following</button>
+          </div>
+          <div class="banner" id="banner"></div>
+        </section>
+        <aside>
+          <div class="card">
+            <h2>Current edge</h2>
+            <div class="mono big" id="edge">—</div>
+            <div class="muted" id="authority">No snapshot yet</div>
+          </div>
+          <div class="card">
+            <h2>Vehicle</h2>
+            <div class="mono" id="pose">—</div>
+            <div class="muted" id="motion">speed and heading appear after the first sample</div>
+          </div>
+          <div class="card">
+            <h2>Next edge</h2>
+            <div id="prediction" class="muted">Waiting for predictor…</div>
+          </div>
+          <div class="card">
+            <h2>Edges</h2>
+            <div id="shadows" class="muted">No edge shadow state yet</div>
+          </div>
+          <div class="card">
+            <h2>Last handoff</h2>
+            <div id="handoff" class="muted">No authority transfer yet</div>
+          </div>
+        </aside>
+      </div>
+      <footer>
+        <div class="card">
+          <h2>Timeline</h2>
+          <div class="events" id="timeline">No events yet</div>
+        </div>
+      </footer>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const REGIONS = [
+        { edge_id: "edge-a", name: "ORR North", latitude: 12.920709, longitude: 77.663605, polygon: [[12.9087,77.6513],[12.9327,77.6513],[12.9327,77.6759],[12.9087,77.6759]] },
+        { edge_id: "edge-b", name: "Tech Park", latitude: 12.928155, longitude: 77.681794, polygon: [[12.9161,77.6695],[12.9402,77.6695],[12.9402,77.6941],[12.9161,77.6941]] },
+        { edge_id: "edge-c", name: "Bellandur", latitude: 12.94134, longitude: 77.696074, polygon: [[12.9293,77.6838],[12.9534,77.6838],[12.9534,77.7084],[12.9293,77.7084]] },
+        { edge_id: "edge-d", name: "ORR South", latitude: 12.95699, longitude: 77.703291, polygon: [[12.9449,77.691],[12.969,77.691],[12.969,77.7156],[12.9449,77.7156]] },
+      ];
+      const ROLE_COLOR = { AUTHORITATIVE: "#34d399", WARM_SHADOW: "#fbbf24", IDLE: "#64748b" };
+      const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([12.938, 77.683], 13);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(map);
+      const regionLayers = {};
+      REGIONS.forEach((r) => {
+        regionLayers[r.edge_id] = L.polygon(r.polygon, { color: "#64748b", weight: 1.2, fillOpacity: 0.1 }).addTo(map)
+          .bindPopup(r.name + " · " + r.edge_id);
+      });
+      const nodeLayers = {};
+      const trail = L.polyline([], { color: "#38bdf8", weight: 3, opacity: 0.85 }).addTo(map);
+      const heading = L.polyline([], { color: "#f8fafc", weight: 2, opacity: 0.8 }).addTo(map);
+      const car = L.circleMarker([12.920709, 77.663605], { radius: 11, color: "#f8fafc", fillColor: "#38bdf8", fillOpacity: 1, weight: 3 }).addTo(map);
+
+      let follow = true;
+      let driving = false;
+      let driveAbort = null;
+      let snapshot = null;
+
+      function roleColor(role) { return ROLE_COLOR[role] || ROLE_COLOR.IDLE; }
+      function showBanner(text) {
+        const el = document.getElementById("banner");
+        el.textContent = text || "";
+        el.style.display = text ? "block" : "none";
+      }
+      function lerp(a, b, t) { return a + (b - a) * t; }
+      function headingDeg(a, b) {
+        return ((Math.atan2(b.longitude - a.longitude, b.latitude - a.latitude) * 180) / Math.PI + 360) % 360;
+      }
+
+      async function replayCorridor(sessionId, signal) {
+        const route = ["edge-a", "edge-b", "edge-c", "edge-d"].map((id) => REGIONS.find((r) => r.edge_id === id));
+        for (let i = 0; i < route.length - 1; i++) {
+          const from = route[i], to = route[i + 1];
+          for (let step = 0; step <= 18; step++) {
+            if (signal.aborted) return;
+            const t = step / 18;
+            const sample = {
+              session_id: sessionId,
+              timestamp_ms: Date.now(),
+              latitude: lerp(from.latitude, to.latitude, t),
+              longitude: lerp(from.longitude, to.longitude, t),
+              speed_mps: 12 + i * 2,
+              heading_deg: headingDeg(from, to),
+              edge_id: t < 0.55 ? from.edge_id : to.edge_id,
+              workload_class: "stream",
+            };
+            const resp = await fetch("/v1/trajectory", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(sample),
+              signal,
+            });
+            if (!resp.ok) throw new Error("trajectory ingest failed (" + resp.status + ")");
+            await new Promise((r) => setTimeout(r, 220));
+          }
+        }
+      }
+
+      document.getElementById("followBtn").onclick = () => {
+        follow = !follow;
+        document.getElementById("followBtn").textContent = follow ? "Following" : "Free pan";
+      };
+      document.getElementById("driveBtn").onclick = async () => {
+        if (driving) {
+          driveAbort?.abort();
+          driving = false;
+          document.getElementById("driveBtn").textContent = "Drive A → D";
+          return;
+        }
+        driving = true;
+        driveAbort = new AbortController();
+        document.getElementById("driveBtn").textContent = "Stop drive";
+        showBanner("");
+        try {
+          await replayCorridor((snapshot && snapshot.session_id) || "sim-vehicle-01", driveAbort.signal);
+        } catch (err) {
+          if (err.name !== "AbortError") showBanner(err.message);
+        } finally {
+          driving = false;
+          document.getElementById("driveBtn").textContent = "Drive A → D";
+        }
+      };
+
+      function render(s) {
+        snapshot = s;
+        const conn = document.getElementById("conn");
+        conn.textContent = "live";
+        conn.className = "pill ok";
+        document.getElementById("meta").textContent = [s.mode, s.session_id, "epoch " + (s.authority && s.authority.epoch)].join(" · ");
+        document.getElementById("edge").textContent = s.current_edge_id || "—";
+        const holder = s.authority && s.authority.holder_edge_id;
+        document.getElementById("authority").innerHTML =
+          (holder === s.current_edge_id ? '<span class="auth">Authoritative</span>' : '<span class="warm">Tracking</span>') +
+          ' · <span class="mono">' + (holder || "—") + " · epoch " + ((s.authority && s.authority.epoch) || "—") + "</span>";
+        document.getElementById("pose").textContent =
+          (s.vehicle_latitude != null ? s.vehicle_latitude.toFixed(5) : "—") + ", " +
+          (s.vehicle_longitude != null ? s.vehicle_longitude.toFixed(5) : "—");
+        document.getElementById("motion").textContent =
+          (s.vehicle_speed_mps != null ? s.vehicle_speed_mps.toFixed(1) : "—") + " m/s · heading " +
+          (s.vehicle_heading != null ? s.vehicle_heading.toFixed(0) : "—") + "°";
+
+        const probs = (s.prediction && s.prediction.probabilities) || {};
+        const predRows = Object.entries(probs)
+          .filter(([id]) => id !== s.current_edge_id)
+          .sort((a, b) => b[1] - a[1])
+          .map(([id, p]) => {
+            const pct = Math.round(p * 100);
+            return '<div class="row"><span class="mono">' + id + '</span><span>' + pct + '%</span></div><div class="bar"><span style="width:' + pct + '%"></span></div>';
+          });
+        document.getElementById("prediction").innerHTML = predRows.length
+          ? predRows.join("") + (s.prediction.eta_sec != null ? '<div class="muted" style="margin-top:8px">ETA ~' + Number(s.prediction.eta_sec).toFixed(0) + "s</div>" : "")
+          : "Waiting for predictor…";
+
+        const shadows = (s.shadows && s.shadows.length)
+          ? s.shadows
+          : (s.topology || []).map((n) => ({
+              edge_id: n.edge_id,
+              role: n.role,
+              sync_ratio: n.sync_ratio || 0,
+              output_suppressed: n.role !== "AUTHORITATIVE",
+            }));
+        document.getElementById("shadows").innerHTML = shadows.length
+          ? shadows.map((sh) => {
+              const tone = sh.role === "AUTHORITATIVE" ? "auth" : sh.role === "WARM_SHADOW" ? "warm" : "idle";
+              const pct = Math.round((sh.sync_ratio || 0) * 100);
+              return '<div style="margin-bottom:10px"><div class="row"><span class="mono ' + tone + '">' + sh.edge_id + '</span><span class="muted">' + sh.role + '</span></div><div class="bar warm"><span style="width:' + pct + '%"></span></div><div class="muted">sync ' + pct + "% · " + (sh.output_suppressed ? "output suppressed" : "output enabled") + "</div></div>";
+            }).join("")
+          : "No edge shadow state yet";
+
+        const handoff = [...(s.timeline || [])].reverse().find((e) => e.event_type === "AuthorityTransferred");
+        if (handoff) {
+          const payload = handoff.payload || {};
+          const raw = String(payload.mode || payload.promotion_mode || payload.transition_mode || handoff.message || "");
+          const mode = /warm/i.test(raw) ? "Warm" : /reactive/i.test(raw) ? "Reactive" : (payload.mode || payload.promotion_mode || "unknown");
+          const latency = payload.latency_ms;
+          document.getElementById("handoff").innerHTML =
+            handoff.message + '<div class="' + (mode === "Warm" ? "auth" : "bad") + '" style="margin-top:8px">' + mode + (latency ? " · " + latency + " ms" : "") + "</div>";
+        }
+
+        const events = [...(s.timeline || [])]
+          .reverse()
+          .filter((e) => e.event_type !== "ResourceSnapshot")
+          .slice(0, 10);
+        document.getElementById("timeline").innerHTML = events.length
+          ? events.map((e) => '<div class="event"><div class="muted mono">' + new Date(e.timestamp_ms).toLocaleTimeString() + " · " + e.event_type + "</div><div>" + (e.message || "") + "</div></div>").join("")
+          : "No events yet";
+
+        const roleByEdge = {};
+        (s.topology || []).forEach((n) => { roleByEdge[n.edge_id] = n.role; });
+        REGIONS.forEach((r) => {
+          const role = roleByEdge[r.edge_id] || "IDLE";
+          const color = roleColor(role);
+          regionLayers[r.edge_id].setStyle({ color, fillColor: color, weight: role === "AUTHORITATIVE" ? 2.5 : 1.2, fillOpacity: role === "AUTHORITATIVE" ? 0.22 : 0.1 });
+          if (!nodeLayers[r.edge_id]) {
+            nodeLayers[r.edge_id] = L.circleMarker([r.latitude, r.longitude], { radius: 6, color, fillColor: color, fillOpacity: 0.95 }).addTo(map);
+          } else {
+            nodeLayers[r.edge_id].setStyle({ color, fillColor: color, radius: role === "AUTHORITATIVE" ? 9 : 6 });
+          }
+        });
+
+        const trailPts = (s.vehicle_trail || []).map((p) => [p.latitude, p.longitude]);
+        trail.setLatLngs(trailPts);
+        if (s.vehicle_latitude != null && s.vehicle_longitude != null) {
+          const lat = s.vehicle_latitude, lon = s.vehicle_longitude;
+          car.setLatLng([lat, lon]);
+          const rad = ((s.vehicle_heading || 0) * Math.PI) / 180;
+          heading.setLatLngs([[lat, lon], [lat + Math.cos(rad) * 0.0018, lon + Math.sin(rad) * 0.0018]]);
+          if (follow) map.panTo([lat, lon], { animate: true, duration: 0.35 });
+        }
+      }
+
+      function connect() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(proto + "://" + location.host + "/ws/live");
+        ws.onopen = () => { document.getElementById("conn").textContent = "live"; document.getElementById("conn").className = "pill ok"; showBanner(""); };
+        ws.onmessage = (ev) => { try { render(JSON.parse(ev.data)); } catch (e) { showBanner("Invalid snapshot JSON"); } };
+        ws.onclose = () => {
+          document.getElementById("conn").textContent = "disconnected";
+          document.getElementById("conn").className = "pill bad";
+          setTimeout(connect, 2000);
+        };
+        ws.onerror = () => showBanner("WebSocket error");
+      }
+      fetch("/v1/snapshot").then((r) => r.json()).then(render).catch(() => showBanner("Backend unreachable — start the mesh + backend"));
+      connect();
+    </script>
+  </body>
+</html>
