@@ -331,14 +331,19 @@ async def sim_drive_status():
 
 @app.post("/v1/sim/start")
 async def sim_start(body: dict = Body(default={})):
-    return await start_drive(
-        runtime,
-        source=str(body.get("source") or "electronic-city"),
-        destination=str(body.get("destination") or "whitefield"),
-        scenario=str(body.get("scenario") or "warm"),
-        tick_ms=int(body.get("tick_ms") or 350),
-        include_images=bool(body.get("include_images", True)),
-    )
+    try:
+        return await start_drive(
+            runtime,
+            source=str(body.get("source") or "electronic-city"),
+            destination=str(body.get("destination") or "whitefield"),
+            scenario=str(body.get("scenario") or "warm"),
+            tick_ms=int(body.get("tick_ms") or 350),
+            include_images=bool(body.get("include_images", True)),
+        )
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {"accepted": False, "error": str(exc)}
 
 
 @app.post("/v1/sim/pause")
@@ -412,7 +417,7 @@ async def ws_live(websocket: WebSocket):
     while True:
         try:
             await websocket.send_text(json.dumps(await runtime.snapshot()))
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.12)
         except WebSocketDisconnect:
             break
         except Exception:
@@ -426,7 +431,7 @@ _UI_DIST = _FRONTEND_ROOT / "dist"
 
 @app.get("/")
 async def dashboard_home():
-    """2D live dashboard. Always prefer demo.html so the 3D dist build is not served."""
+    """2D live dashboard."""
     return FileResponse(_DEMO_HTML)
 
 
@@ -435,7 +440,15 @@ async def dashboard_demo():
     return FileResponse(_DEMO_HTML)
 
 
-# Optional built-asset mount for leftover Vite files; `/` stays the 2D demo.
+@app.get("/3d")
+async def dashboard_3d():
+    """New Tailwind CSS + React 3D Simulation dashboard."""
+    if (_UI_DIST / "index.html").is_file():
+        return FileResponse(_UI_DIST / "index.html")
+    return FileResponse(_DEMO_HTML)
+
+
+# Optional built-asset mount for leftover Vite files
 if _UI_DIST.is_dir() and (_UI_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=str(_UI_DIST / "assets")), name="dashboard-assets")
 

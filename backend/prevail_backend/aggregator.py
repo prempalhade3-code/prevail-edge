@@ -45,6 +45,9 @@ class EdgeAggregator:
     def __init__(self) -> None:
         self._urls = edge_urls()
         self._auth_url = authoritative_url()
+        self._cached_auth_url: str | None = None
+        self._cached_auth_holder: str | None = None
+        self._cached_auth_at: float = 0.0
 
     def urls(self) -> dict[str, str]:
         return dict(self._urls)
@@ -142,6 +145,8 @@ class EdgeAggregator:
                 freshest_ts = ts
                 freshest = snap
         if freshest is not None:
+            fresh_ts = int(freshest.get("vehicle_updated_ms") or 0)
+            primary_ts = int(primary.get("vehicle_updated_ms") or 0)
             for key in (
                 "vehicle_latitude",
                 "vehicle_longitude",
@@ -153,11 +158,28 @@ class EdgeAggregator:
             ):
                 if key in freshest:
                     merged[key] = freshest[key]
+            if fresh_ts >= primary_ts:
+                if freshest.get("current_edge_id"):
+                    merged["current_edge_id"] = freshest["current_edge_id"]
+                fresh_auth = freshest.get("authority")
+                if isinstance(fresh_auth, dict) and fresh_auth.get("holder_edge_id"):
+                    merged["authority"] = fresh_auth
+                    holder = fresh_auth.get("holder_edge_id")
+                    if isinstance(holder, str) and holder in self._urls:
+                        self._cached_auth_url = self._urls[holder]
+                        self._cached_auth_holder = holder
+                        import time
+
+                        self._cached_auth_at = time.time()
+        current_edge = merged.get("current_edge_id")
         newest_pred = None
         newest_ts = -1
         for snap in snapshots.values():
             pred = snap.get("prediction")
-            if not isinstance(pred, dict) or pred.get("eta_sec") is None:
+            if not isinstance(pred, dict):
+                continue
+            for_edge = pred.get("for_edge")
+            if for_edge and current_edge and for_edge != current_edge:
                 continue
             ts = int(pred.get("computed_at_ms") or snap.get("vehicle_updated_ms") or 0)
             if ts >= newest_ts:
@@ -180,18 +202,34 @@ class EdgeAggregator:
         snaps = await self.fetch_all()
         return self.merge_snapshots(snaps)
 
-    async def authority_url(self) -> str:
+    def cached_authority_url(self) -> str:
+        """Return last-known authority URL without a network round trip."""
+        return self._cached_auth_url or self._auth_url
+
+    async def authority_url(self, *, force: bool = False) -> str:
         """Route control traffic to whichever edge currently holds authority."""
+        import time
+
+        now = time.time()
+        if (
+            not force
+            and self._cached_auth_url
+            and (now - self._cached_auth_at) < 8.0
+        ):
+            return self._cached_auth_url
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 resp = await client.get(f"{self._auth_url}/v1/current-node")
                 resp.raise_for_status()
                 holder = (resp.json() or {}).get("authority_holder")
                 if holder and holder in self._urls:
-                    return self._urls[holder]
+                    self._cached_auth_url = self._urls[holder]
+                    self._cached_auth_holder = holder
+                    self._cached_auth_at = now
+                    return self._cached_auth_url
         except httpx.HTTPError:
             pass
-        return self._auth_url
+        return self._cached_auth_url or self._auth_url
 
     async def get(self, path: str) -> Any:
         url = await self.authority_url()
