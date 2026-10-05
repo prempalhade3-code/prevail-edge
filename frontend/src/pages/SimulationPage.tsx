@@ -4,7 +4,9 @@ import { LiveNow } from "../components/LiveNow";
 import { Pipeline } from "../components/Pipeline";
 import { RecentEvents } from "../components/RecentEvents";
 import { RouteBar } from "../components/RouteBar";
-import { cityFor, edgeSequenceForCities } from "../data/cities";
+import { cityFor } from "../data/cities";
+import { vehicleById } from "../data/vehicles";
+import { edgeSequenceForRoadPath } from "../lib/roadGraphRoute";
 import type { City } from "../data/cities";
 import type { VehiclePose } from "../hooks/useSmoothedVehicle";
 import { edgeLabel, fmtHeading, fmtSpeed, placeName } from "../lib/format";
@@ -13,6 +15,7 @@ import type { DriveStatus, SystemSnapshot, TimelineEvent } from "../types";
 
 export function SimulationPage({
   snapshot,
+  hudSnapshot,
   drive,
   pose,
   events,
@@ -22,6 +25,8 @@ export function SimulationPage({
   destination,
   setSource,
   setDestination,
+  vehicleId,
+  setVehicleId,
   pending,
   error,
   onStart,
@@ -31,6 +36,7 @@ export function SimulationPage({
   onReset,
 }: {
   snapshot: SystemSnapshot | null;
+  hudSnapshot?: SystemSnapshot | null;
   drive: DriveStatus | null;
   pose: VehiclePose;
   events: TimelineEvent[];
@@ -40,6 +46,8 @@ export function SimulationPage({
   destination: string;
   setSource: (id: string) => void;
   setDestination: (id: string) => void;
+  vehicleId: string;
+  setVehicleId: (id: string) => void;
   pending: boolean;
   error: string | null;
   onStart: () => void;
@@ -50,15 +58,16 @@ export function SimulationPage({
 }) {
   const [follow, setFollow] = useState(true);
   const live = Boolean(drive?.running);
-  const from = live && drive?.source ? drive.source : source;
-  const to = live && drive?.destination ? drive.destination : destination;
+  const from = source;
+  const to = destination;
   const src = cityFor(from);
   const holding =
     live &&
     pose.ready &&
     src &&
     metersBetween(pose.lat, pose.lon, src.latitude, src.longitude) < 90;
-  const edgePath = edgeSequenceForCities(from, to);
+  const edgePath = edgeSequenceForRoadPath(from, to);
+  const vehicle = vehicleById(vehicleId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -67,6 +76,8 @@ export function SimulationPage({
         destination={destination}
         setSource={setSource}
         setDestination={setDestination}
+        vehicleId={vehicleId}
+        setVehicleId={setVehicleId}
         cities={cities}
         status={drive}
         pending={pending}
@@ -87,6 +98,8 @@ export function SimulationPage({
             pose={pose}
             source={source}
             destination={destination}
+            vehicle={vehicle}
+            moving={live && pose.ready && !holding}
           />
           <button
             type="button"
@@ -98,7 +111,7 @@ export function SimulationPage({
           <div className="absolute bottom-4 left-4 z-[1000] max-w-[320px] rounded-2xl bg-ink/88 px-4 py-3 text-white shadow-float backdrop-blur">
             <p className="text-xs font-medium text-blue-200">vehicle</p>
             <p className="mt-1 text-sm font-semibold">
-              {placeName(from)} → {placeName(to)}
+              {vehicle.name} · {placeName(from)} → {placeName(to)}
             </p>
             <p className="mt-1 text-xs text-slate-300">
               {live ? edgeLabel(snapshot?.current_edge_id) : edgePath.map(edgeLabel).join(" → ") || "—"}
@@ -114,8 +127,8 @@ export function SimulationPage({
         </section>
 
         <aside className="flex min-h-0 w-full flex-col gap-4 lg:w-[32%] lg:overflow-y-auto">
-          <LiveNow snapshot={snapshot} drive={drive} events={liveEvents} source={source} destination={destination} />
-          <Pipeline events={liveEvents} snapshot={snapshot} drive={drive} />
+          <LiveNow snapshot={hudSnapshot ?? snapshot} drive={drive} events={liveEvents} source={source} destination={destination} />
+          <Pipeline events={liveEvents} snapshot={hudSnapshot ?? snapshot} drive={drive} />
           <RecentEvents events={live ? liveEvents : events} />
         </aside>
       </div>

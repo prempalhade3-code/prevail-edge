@@ -156,7 +156,8 @@ def plan_ticks(
     mapper: Optional[RegionMapper] = None,
     graph: Optional[RoadGraph] = None,
     steps_per_leg: int = 24,
-    linger_first: int = 36,
+    linger_first: int = 0,
+    ramp_ticks: int = 14,
     include_images: bool = True,
     divert_wrong: bool = False,
 ) -> List[dict]:
@@ -182,20 +183,35 @@ def plan_ticks(
         raise ValueError(f"road graph has no geometry from {source} to {destination}")
 
     origin = (float(graph.nodes[source]["latitude"]), float(graph.nodes[source]["longitude"]))
-    total = linger_first + max(steps_per_leg * max(1, len(path) - 1), 8)
-    sampled = _resample(pts, total)
+    movement_ticks = max(steps_per_leg * max(1, len(path) - 1), 8)
+    ramp = max(0, min(ramp_ticks, movement_ticks))
+    total = linger_first + movement_ticks
+    # Resample movement separately so the first post-linger tick starts at the
+    # source — not partway along the polyline (which caused a visible teleport).
+    movement_sampled = _resample(pts, movement_ticks)
+    first_target = movement_sampled[0] if movement_sampled else origin
 
     ticks: List[dict] = []
     import base64
 
     image_b64 = base64.b64encode(MIN_JPEG).decode("ascii")
-    for step, (lat, lon) in enumerate(sampled):
+    for step in range(total):
         if step < linger_first:
             lat, lon = origin
-            nxt = sampled[min(step + 1, len(sampled) - 1)]
+            nxt = first_target
             heading = _heading(origin, nxt)
+            speed = 3.0
         else:
-            nxt = sampled[min(step + 1, len(sampled) - 1)]
+            move_idx = min(step - linger_first, len(movement_sampled) - 1)
+            if ramp > 0 and move_idx < ramp:
+                frac = (move_idx + 1) / ramp
+                lat = origin[0] + (movement_sampled[move_idx][0] - origin[0]) * frac
+                lon = origin[1] + (movement_sampled[move_idx][1] - origin[1]) * frac
+                speed = 3.0 + (11.0 - 3.0) * frac
+            else:
+                lat, lon = movement_sampled[move_idx]
+                speed = 11.0
+            nxt = movement_sampled[min(move_idx + 1, len(movement_sampled) - 1)]
             heading = _heading((lat, lon), nxt)
         mapped = mapper.get_edge_id(lat, lon)
         sample = {
@@ -203,7 +219,7 @@ def plan_ticks(
             "timestamp_ms": 0,
             "latitude": round(lat, 6),
             "longitude": round(lon, 6),
-            "speed_mps": 8.0 if step < linger_first else 11.0,
+            "speed_mps": round(speed, 2),
             "heading_deg": heading,
             "edge_id": mapped,
             "workload_class": "stream",

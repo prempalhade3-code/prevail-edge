@@ -116,6 +116,7 @@ log "Starting backend…"
 cd "$ROOT/backend"
 PREVAIL_BOOTSTRAP_EDGE_ID=edge-a \
   PREVAIL_DATABASE_URL="${PREVAIL_DATABASE_URL:-$DEFAULT_DB}" \
+  PYTHONPATH="$ROOT" \
   "$ROOT/backend/.venv/bin/python" -m prevail_backend.main &
 PIDS+=("$!")
 wait_http "http://127.0.0.1:8000/health" "backend" 20 || true
@@ -128,12 +129,12 @@ if [[ -f "$JAR" ]]; then
   log "Authority Flink job will be started by edge-a (shadows on demand)"
 fi
 
-log "Starting live SUMO mobility source…"
+log "Starting live road mobility source..."
 cd "$ROOT"
 PREVAIL_TRAJECTORY_URL=http://127.0.0.1:8090/v1/trajectory \
   PREVAIL_TRAFFIC_URL=http://127.0.0.1:8090/v1/traffic \
   PREVAIL_SESSION_ID=session-lab-1 \
-  PYTHONPATH="$ROOT" "$ROOT/backend/.venv/bin/python" -m sim.vehicle.sumo_live &
+  PYTHONPATH="$ROOT" "$ROOT/backend/.venv/bin/python" -m sim.vehicle.road_simulator &
 PIDS+=("$!")
 
 echo ""

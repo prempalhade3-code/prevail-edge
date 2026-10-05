@@ -101,6 +101,8 @@ mod tests {
             probabilities: probs.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
             eta_sec: Some(eta),
             computed_at_ms: 0,
+            for_edge: None,
+            route_terminal: false,
         }
     }
 

@@ -1,6 +1,7 @@
 import { ArrowLeftRight, LoaderCircle, Pause, Play, RotateCcw, Square } from "lucide-react";
 import { CitySelect } from "./CitySelect";
-import { edgeSequenceForCities } from "../data/cities";
+import { VehicleSelector } from "./vehicle/VehicleSelector";
+import { edgeSequenceForRoadPath } from "../lib/roadGraphRoute";
 import type { City } from "../data/cities";
 import { edgeLabel, placeName } from "../lib/format";
 import type { DriveStatus } from "../types";
@@ -17,6 +18,8 @@ export function RouteBar({
   onStart,
   onPause,
   onResume,
+  vehicleId,
+  setVehicleId,
   onStop,
   onReset,
 }: {
@@ -24,6 +27,8 @@ export function RouteBar({
   destination: string;
   setSource: (id: string) => void;
   setDestination: (id: string) => void;
+  vehicleId: string;
+  setVehicleId: (id: string) => void;
   cities: City[];
   status: DriveStatus | null;
   pending: boolean;
@@ -37,14 +42,14 @@ export function RouteBar({
   const running = Boolean(status?.running);
   const paused = Boolean(status?.paused);
   const sameCity = source === destination;
-  const edgeSeq = sameCity ? [] : edgeSequenceForCities(source, destination);
+  const edgeSeq = sameCity ? [] : edgeSequenceForRoadPath(source, destination);
   const liveMismatch = Boolean(
     running && status?.source && (status.source !== source || status.destination !== destination),
   );
 
   return (
-    <div className="mx-6 mt-4 panel px-5 py-3">
-      <div className="flex flex-wrap items-end gap-3">
+    <div className="relative z-30 mx-6 mt-4 overflow-visible panel px-5 py-3">
+      <div className="flex flex-wrap items-end gap-3 overflow-visible">
         <CitySelect label="from" value={source} onChange={setSource} cities={cities} />
         <button
           type="button"
@@ -58,6 +63,7 @@ export function RouteBar({
           <ArrowLeftRight className="h-4 w-4" />
         </button>
         <CitySelect label="to" value={destination} onChange={setDestination} cities={cities} />
+        <VehicleSelector value={vehicleId} onChange={setVehicleId} disabled={running} />
         <div className="min-w-[240px] pb-1">
           <p className="text-sm text-muted">route</p>
           <p className="text-sm font-semibold text-ink">

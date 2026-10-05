@@ -27,15 +27,19 @@ export function useSmoothedVehicle(lat?: number, lon?: number, heading?: number)
         const t = target.current;
         if (!t.ready) return { ...prev, ready: false };
         if (!prev.ready) return { ...t };
-        const nlat = prev.lat + (t.lat - prev.lat) * 0.28;
-        const nlon = prev.lon + (t.lon - prev.lon) * 0.28;
+        const posAlpha = 0.38;
+        const headAlpha = 0.42;
+        const nlat = prev.lat + (t.lat - prev.lat) * posAlpha;
+        const nlon = prev.lon + (t.lon - prev.lon) * posAlpha;
         let dh = t.heading - prev.heading;
         while (dh > 180) dh -= 360;
         while (dh < -180) dh += 360;
+        const latDone = Math.abs(t.lat - nlat) < 0.000004;
+        const lonDone = Math.abs(t.lon - nlon) < 0.000004;
         return {
-          lat: Math.abs(t.lat - nlat) < 0.000001 ? t.lat : nlat,
-          lon: Math.abs(t.lon - nlon) < 0.000001 ? t.lon : nlon,
-          heading: prev.heading + dh * 0.28,
+          lat: latDone ? t.lat : nlat,
+          lon: lonDone ? t.lon : nlon,
+          heading: Math.abs(dh) < 0.25 ? t.heading : prev.heading + dh * headAlpha,
           ready: true,
         };
       });

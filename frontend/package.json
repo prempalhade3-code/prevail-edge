@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "sync:road-graph": "cp ../deploy/config/road-graph.json src/data/road-graph.json",
+    "predev": "npm run sync:road-graph",
+    "prebuild": "npm run sync:road-graph",
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5173",

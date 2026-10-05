@@ -14,6 +14,7 @@ import { ShadowsPage } from "./pages/ShadowsPage";
 import { SimulationPage } from "./pages/SimulationPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { DEFAULT_FROM, DEFAULT_TO, isCityId } from "./data/cities";
+import { DEFAULT_VEHICLE_ID } from "./data/vehicles";
 import { useGeoCities } from "./hooks/useGeoCities";
 import type { NavId } from "./types";
 
@@ -23,14 +24,18 @@ function storedCity(key: string, fallback: string): string {
 }
 
 export default function App() {
-  const { snapshot, connected, error } = useLiveSnapshot();
+  const { snapshot, mapSnapshot, connected, error } = useLiveSnapshot();
   const drive = useDriveControls();
   const history = useHistoryData(true);
   const [nav, setNav] = useState<NavId>("live");
   const [source, setSource] = useState(() => storedCity("prevail.from", DEFAULT_FROM));
   const [destination, setDestination] = useState(() => storedCity("prevail.to", DEFAULT_TO));
+  const [vehicleId, setVehicleId] = useState(
+    () => sessionStorage.getItem("prevail.vehicle") || DEFAULT_VEHICLE_ID,
+  );
   const [runStartedAt, setRunStartedAt] = useState(0);
-  const pose = useSmoothedVehicle(snapshot?.vehicle_latitude, snapshot?.vehicle_longitude, snapshot?.vehicle_heading);
+  const liveSnap = mapSnapshot ?? snapshot;
+  const pose = useSmoothedVehicle(liveSnap?.vehicle_latitude, liveSnap?.vehicle_longitude, liveSnap?.vehicle_heading);
   const cities = useGeoCities();
 
   const events = useMemo(
@@ -63,7 +68,8 @@ export default function App() {
       <main className={`flex min-h-0 flex-1 flex-col ${nav === "live" ? "overflow-hidden" : "overflow-auto"}`}>
         {nav === "live" && (
           <SimulationPage
-            snapshot={snapshot}
+            snapshot={liveSnap}
+            hudSnapshot={snapshot}
             drive={drive.status}
             pose={pose}
             events={visible}
@@ -78,6 +84,11 @@ export default function App() {
             setDestination={(id) => {
               sessionStorage.setItem("prevail.to", id);
               setDestination(id);
+            }}
+            vehicleId={vehicleId}
+            setVehicleId={(id) => {
+              sessionStorage.setItem("prevail.vehicle", id);
+              setVehicleId(id);
             }}
             pending={drive.pending}
             error={drive.error}

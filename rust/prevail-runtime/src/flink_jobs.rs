@@ -70,7 +70,7 @@ fn sink_path(edge_id: &str) -> String {
     format!("{root}/{edge_id}.jsonl")
 }
 
-fn checkpoint_dir(edge_id: &str) -> PathBuf {
+pub fn checkpoint_dir(edge_id: &str) -> PathBuf {
     if let Ok(dir) = std::env::var("PREVAIL_CHECKPOINT_DIR") {
         let path = PathBuf::from(&dir);
         if path.file_name().and_then(|s| s.to_str()) == Some(edge_id) {
@@ -121,7 +121,7 @@ fn consider_chk_dir(dir: &Path, best: &mut Option<(u64, PathBuf)>) {
             .ok()
             .map(|it| it.filter_map(|e| e.ok()).count())
             .unwrap_or(0);
-        if extra < 2 {
+        if extra < 1 {
             continue;
         }
         if best.as_ref().map(|(cur, _)| n > *cur).unwrap_or(true) {

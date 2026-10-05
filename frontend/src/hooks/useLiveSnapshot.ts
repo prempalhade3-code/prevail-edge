@@ -3,17 +3,19 @@ import { apiGet, liveSocketUrl } from "../lib/api";
 import type { SystemSnapshot } from "../types";
 
 /** Throttle React HUD updates; the map still uses the latest snapshot. */
-const HUD_MS = 180;
+const HUD_MS = 90;
 
 export function useLiveSnapshot() {
   const snapshotRef = useRef<SystemSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
+  const [mapSnapshot, setMapSnapshot] = useState<SystemSnapshot | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastHud = useRef(0);
 
   const applySnapshot = useCallback((next: SystemSnapshot) => {
     snapshotRef.current = next;
+    setMapSnapshot(next);
     const now = performance.now();
     if (lastHud.current !== 0 && now - lastHud.current < HUD_MS) {
       return;
@@ -67,5 +69,5 @@ export function useLiveSnapshot() {
     };
   }, [refresh, applySnapshot]);
 
-  return { snapshot, snapshotRef, connected, error };
+  return { snapshot, mapSnapshot, snapshotRef, connected, error };
 }

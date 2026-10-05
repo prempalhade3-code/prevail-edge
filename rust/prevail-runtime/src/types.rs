@@ -30,6 +30,10 @@ pub struct PredictionResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eta_sec: Option<f64>,
     pub computed_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub for_edge: Option<String>,
+    #[serde(default)]
+    pub route_terminal: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

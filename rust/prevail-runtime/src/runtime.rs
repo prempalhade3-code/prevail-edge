@@ -344,6 +344,8 @@ impl PrevailRuntime {
             probabilities,
             eta_sec: Some(eta_sec),
             computed_at_ms: now_ms(),
+            for_edge: Some(self.edge_id.clone()),
+            route_terminal: false,
         });
         self.emit(
             "PredictionUpdated",
@@ -484,9 +486,10 @@ impl PrevailRuntime {
         );
     }
 
-    pub async fn refresh_prediction(&mut self) {
+    pub async fn refresh_prediction(&mut self, current_edge: Option<&str>) {
         let client = PredictorClient::new(&self.predictor_url);
-        let (pred, outcome) = client.predict(&self.session_id, &self.edge_id).await;
+        let edge = current_edge.unwrap_or(&self.edge_id);
+        let (pred, outcome) = client.predict(&self.session_id, edge).await;
         self.predictor_degraded = outcome == crate::predictor::PredictOutcome::Degraded;
         self.prediction = Some(pred.clone());
         let event = if self.predictor_degraded {
@@ -557,7 +560,7 @@ impl PrevailRuntime {
             // Continuous speculation while authoritative — shadows must be warm
             // BEFORE the vehicle crosses the next edge boundary.
             if self.prediction.is_none() || self.trajectory_ticks % 8 == 1 {
-                self.refresh_prediction().await;
+                self.refresh_prediction(Some(&sample.edge_id)).await;
             }
             if self.prediction.is_some() {
                 self.run_speculation_cycle().await;
@@ -566,6 +569,7 @@ impl PrevailRuntime {
 
         let edge_changed = sample.edge_id != self.edge_id;
         if edge_changed {
+            self.prediction = None;
             let started = now_ms();
             self.last_handoff_at_ms = Some(started);
             let mut payload = HashMap::new();
@@ -583,7 +587,10 @@ impl PrevailRuntime {
                 self.handle_handoff(&sample.edge_id).await;
             }
         }
-        self.edge_id = sample.edge_id;
+        self.edge_id = sample.edge_id.clone();
+        if edge_changed && self.is_authoritative() {
+            self.refresh_prediction(Some(&sample.edge_id)).await;
+        }
         self.vehicle_latitude = Some(sample.latitude);
         self.vehicle_longitude = Some(sample.longitude);
         self.vehicle_heading = sample.heading_deg;
@@ -1074,16 +1081,9 @@ impl PrevailRuntime {
             Duration::from_secs(2),
         )
         .await
-        .unwrap_or_default();
-        if savepoint.is_empty() {
-            self.emit(
-                "ShadowRefused",
-                Some(target),
-                "No Flink checkpoint available yet; will retry",
-                HashMap::new(),
-            );
-            return;
-        }
+        .unwrap_or_else(|| {
+            format!("file://{}", crate::flink_jobs::checkpoint_dir(&self.local_edge_id).display())
+        });
         let payload = control_envelope::Payload::ShadowCreate(proto::ShadowCreate {
             session_id: self.session_id.clone(),
             source_edge_id: self.local_edge_id.clone(),
@@ -1950,14 +1950,14 @@ impl PrevailRuntime {
                     "Edge A authoritative",
                     HashMap::new(),
                 );
-                self.refresh_prediction().await;
+                self.refresh_prediction(None).await;
             }
             2 => self.run_speculation_cycle().await,
             3..=8 => self.tick_warm_shadow(),
             9 => {
                 self.handle_handoff("edge-b").await;
             }
-            10 => self.refresh_prediction().await,
+            10 => self.refresh_prediction(None).await,
             _ => {}
         }
     }

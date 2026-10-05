@@ -81,3 +81,4 @@ unreal/**/*.xcodeproj
 
 # Docs PDF build (keep source md; PDF optional in repo)
 docs/node_modules/
+*.ses
