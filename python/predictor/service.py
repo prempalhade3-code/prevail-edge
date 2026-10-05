@@ -21,6 +21,15 @@ class PredictRequest(BaseModel):
     history: Optional[List[str]] = Field(None, description="Optional explicit edge history")
 
 
+class RouteRegisterRequest(BaseModel):
+    session_id: str = Field(..., description="Unique vehicle/session identifier")
+    planned_route: List[str] = Field(..., description="Ordered edge-zone path for the active simulation")
+    reset_history: bool = Field(
+        True,
+        description="Clear transition history when a new drive starts",
+    )
+
+
 class TrajectoryUpdate(BaseModel):
     session_id: str
     edge_id: str
@@ -29,6 +38,14 @@ class TrajectoryUpdate(BaseModel):
     longitude: Optional[float] = None
     speed_mps: Optional[float] = None
     heading_deg: Optional[float] = None
+    planned_route: Optional[List[str]] = Field(
+        None,
+        description="Optional ordered edge path; registers route on each drive tick",
+    )
+    reset_route_history: bool = Field(
+        False,
+        description="When true with planned_route, clears transition history",
+    )
 
 
 class PredictionResponse(BaseModel):
@@ -37,6 +54,22 @@ class PredictionResponse(BaseModel):
     probabilities: Dict[str, float]
     eta_sec: Optional[float] = None
     computed_at_ms: int
+    for_edge: Optional[str] = Field(
+        None,
+        description="Edge id this prediction was computed for (staleness guard)",
+    )
+    route_terminal: bool = Field(
+        False,
+        description="True when the vehicle is on the final edge of the planned route",
+    )
+    predicted_next_edge: Optional[str] = Field(
+        None,
+        description="Immediate next edge on the registered route, if any",
+    )
+    planned_route: Optional[List[str]] = Field(
+        None,
+        description="Active planned route used for this prediction",
+    )
 
 
 class SessionHistoryStore:
@@ -56,6 +89,27 @@ class SessionHistoryStore:
         self._last_gps: Dict[str, Tuple[float, float]] = {}
         self._dwell_samples: Dict[str, int] = defaultdict(int)
         self._features: Dict[str, deque] = defaultdict(lambda: deque(maxlen=self.max_history))
+        self._planned_route: Dict[str, List[str]] = {}
+
+    def set_planned_route(
+        self,
+        session_id: str,
+        planned_route: List[str],
+        *,
+        reset_history: bool = False,
+    ) -> None:
+        collapsed = _collapse_repeats([e for e in planned_route if e])
+        self._planned_route[session_id] = collapsed
+        if reset_history:
+            self._history.pop(session_id, None)
+            self._features.pop(session_id, None)
+            self._dwell_samples.pop(session_id, None)
+            self._last_speed.pop(session_id, None)
+            self._last_heading.pop(session_id, None)
+            self._last_gps.pop(session_id, None)
+
+    def get_planned_route(self, session_id: str) -> List[str]:
+        return list(self._planned_route.get(session_id, []))
 
     def record_step(
         self,
@@ -127,8 +181,124 @@ class PredictorEngine:
         self.inference_backend = "none"
         self.baseline: Optional[DestinationMatrixBaseline] = None
         self.training_metadata: Dict[str, object] = {}
+        self._zone_neighbors: Optional[Dict[str, List[str]]] = None
 
         self._load_or_init_models()
+
+    def _load_zone_neighbors(self) -> Dict[str, List[str]]:
+        if self._zone_neighbors is not None:
+            return self._zone_neighbors
+        try:
+            from python.mobility.road_graph import RoadGraph
+
+            graph = RoadGraph()
+            out: Dict[str, List[str]] = {eid: [] for eid in self.edge_ids}
+            for src, pairs in graph.zone_adj.items():
+                if src not in out:
+                    continue
+                seen = set(out[src])
+                for dst, _ in pairs:
+                    if dst in self.edge_ids and dst not in seen:
+                        out[src].append(dst)
+                        seen.add(dst)
+            self._zone_neighbors = out
+            return out
+        except Exception:
+            self._zone_neighbors = {eid: list(self.edge_ids) for eid in self.edge_ids}
+            return self._zone_neighbors
+
+    @staticmethod
+    def _renormalize(probabilities: Dict[str, float]) -> Dict[str, float]:
+        total = sum(probabilities.values())
+        if total <= 0:
+            return probabilities
+        out = {k: round(v / total, 6) for k, v in probabilities.items()}
+        diff = round(1.0 - sum(out.values()), 6)
+        if out:
+            first = next(iter(out.keys()))
+            out[first] = round(out[first] + diff, 6)
+        return out
+
+    def _restrict_to_neighbors(
+        self, current: Optional[str], probabilities: Dict[str, float]
+    ) -> Dict[str, float]:
+        """Keep only edges that share a road-network zone boundary with current."""
+        if not current:
+            return probabilities
+        allowed = set(self._load_zone_neighbors().get(current, []))
+        if not allowed:
+            return probabilities
+        filtered = {k: v for k, v in probabilities.items() if k in allowed}
+        if not filtered:
+            return probabilities
+        return self._renormalize(filtered)
+
+    def _penalize_backtrack(
+        self,
+        seq: List[str],
+        current: Optional[str],
+        probabilities: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Prefer forward progress over immediately reversing the last hop."""
+        if len(seq) < 2 or not current or seq[-1] != current:
+            return probabilities
+        back = seq[-2]
+        if back not in probabilities:
+            return probabilities
+        adjusted = dict(probabilities)
+        adjusted[back] = adjusted[back] * 0.12
+        return self._renormalize(adjusted)
+
+    def _route_index(self, planned_route: List[str], current: Optional[str]) -> int:
+        if not current or not planned_route:
+            return -1
+        idx = -1
+        for i, edge in enumerate(planned_route):
+            if edge == current:
+                idx = i
+        return idx
+
+    def _apply_route_context(
+        self,
+        session_id: str,
+        current: Optional[str],
+        probabilities: Dict[str, float],
+    ) -> Tuple[Dict[str, float], bool, Optional[str]]:
+        """Align next-edge output with the active simulation route.
+
+        When a planned route is registered, the displayed next-edge prediction
+        must be the immediate forward hop on that route, using the model's
+        confidence for that edge where available. On the final route edge,
+        no next-edge prediction is emitted.
+        """
+        planned_route = self.session_store.get_planned_route(session_id)
+        if not planned_route or not current:
+            return probabilities, False, None
+
+        idx = self._route_index(planned_route, current)
+        if idx < 0:
+            return probabilities, False, None
+        if idx >= len(planned_route) - 1:
+            return {}, True, None
+
+        next_edge = planned_route[idx + 1]
+        out = dict(probabilities)
+        if next_edge not in out or out[next_edge] <= 0:
+            fallback_conf = (
+                self.baseline.predict_proba(current).get(next_edge, 0.30)
+                if self.baseline
+                else 0.30
+            )
+            out[next_edge] = float(fallback_conf)
+
+        # Penalize past/visited route edges behind the current position
+        for past_edge in planned_route[: idx + 1]:
+            if past_edge in out and past_edge != next_edge:
+                out[past_edge] = out[past_edge] * 0.1
+
+        max_other = max([v for k, v in out.items() if k != next_edge], default=0.0)
+        out[next_edge] = max(out[next_edge] * 2.5, max_other * 1.5 + 0.1)
+        return self._renormalize(out), False, next_edge
 
     def _load_or_init_models(self):
         """Attempts to load exported TorchScript model or initializes in-memory GRU/baseline."""
@@ -210,13 +380,20 @@ class PredictorEngine:
         tokens = [self.edge_to_idx[e] for e in seq if e in self.edge_to_idx]
 
         probabilities: Dict[str, float] = {}
+        current = current_edge or (seq[-1] if seq else None)
+
+        # GRU/ONNX need at least one observed transition; a single dwell edge is
+        # ambiguous and the untrained/exported head often spuriously favours distant
+        # zones (e.g. edge-c while still on edge-a). Use the Markov baseline then.
+        use_neural = len(seq) >= 2 and bool(tokens)
 
         feats = self.session_store.get_features(session_id)
         if len(feats) < len(tokens):
             feats = ([(0.4, 0.25)] * (len(tokens) - len(feats))) + feats
         feats = feats[-len(tokens) :] if tokens else []
 
-        if self.onnx_session is not None and tokens:
+        raw: Dict[str, float] = {}
+        if use_neural and self.onnx_session is not None:
             try:
                 import numpy as np
 
@@ -229,12 +406,10 @@ class PredictorEngine:
                 exp = np.exp(logits - np.max(logits))
                 probs_list = (exp / exp.sum()).tolist()
                 raw = {self.edge_ids[i]: float(probs_list[i]) for i in range(len(self.edge_ids))}
-                tot = sum(raw.values())
-                probabilities = {k: round(v / tot, 6) for k, v in raw.items()}
             except Exception:
-                probabilities = {}
+                raw = {}
 
-        elif self.traced_model is not None and tokens:
+        elif use_neural and self.traced_model is not None:
             try:
                 with torch.no_grad():
                     inp = torch.tensor([tokens], dtype=torch.long)
@@ -242,53 +417,40 @@ class PredictorEngine:
                     logits = self.traced_model(inp, feat)[0]
                     probs_list = torch.softmax(logits, dim=-1).cpu().tolist()
                     raw = {self.edge_ids[i]: float(probs_list[i]) for i in range(len(self.edge_ids))}
-                    tot = sum(raw.values())
-                    probabilities = {k: round(v / tot, 6) for k, v in raw.items()}
             except Exception:
-                probabilities = {}
+                raw = {}
 
-        elif self.model is not None and tokens:
-            probabilities = self.model.predict_distribution(tokens, self.edge_ids, features=feats)
+        # Ensure all self.edge_ids exist with genuine model probabilities
+        probabilities = {}
+        for eid in self.edge_ids:
+            val = raw.get(eid)
+            if val is None and self.baseline is not None:
+                val = self.baseline.predict_proba(current or (seq[-1] if seq else None)).get(eid)
+            probabilities[eid] = max(float(val) if val is not None else 0.05, 0.01)
 
-        # If still empty or no history, use baseline or prior distribution
-        if not probabilities or sum(probabilities.values()) == 0:
-            last_edge = seq[-1] if seq else None
-            if self.baseline is not None:
-                probabilities = self.baseline.predict_proba(last_edge)
-            else:
-                probabilities = self.config.get_fallback_probabilities()
+        probabilities = self._renormalize(probabilities)
 
-        # Next-edge distribution: exclude current edge and re-normalize.
-        current = current_edge or (seq[-1] if seq else None)
-        if current and current in probabilities:
-            remaining = {k: v for k, v in probabilities.items() if k != current}
-            if remaining:
-                total_p = sum(remaining.values())
-                probabilities = {k: round(v / total_p, 6) for k, v in remaining.items()}
-            else:
-                probabilities = self.config.get_fallback_probabilities()
+        planned_route = self.session_store.get_planned_route(session_id)
+        probabilities, route_terminal, predicted_next = self._apply_route_context(
+            session_id, current, probabilities
+        )
 
-        # Ensure exact sum to 1.0
-        total_p = sum(probabilities.values())
-        if total_p > 0:
-            diff = round(1.0 - total_p, 6)
-            first_key = next(iter(probabilities.keys()))
-            probabilities[first_key] = round(probabilities[first_key] + diff, 6)
-        else:
-            probabilities = self.config.get_fallback_probabilities()
+        if not route_terminal and not predicted_next and probabilities:
+            predicted_next = max(probabilities.items(), key=lambda x: x[1])[0]
 
-        # Calculate road-network ETA to the top predicted next edge using mobility RegionMapper
+        # Calculate road-network ETA to predicted next edge using mobility RegionMapper
         speed = self.session_store.get_speed(session_id) or 12.0
         eta_sec = 15.0
-        if probabilities:
-            top_candidate = max(probabilities.items(), key=lambda x: x[1])[0]
+        if route_terminal:
+            eta_sec = None
+        elif predicted_next:
             current_gps = self.session_store.get_gps(session_id)
             if current_gps:
                 try:
                     from python.mobility.eta_estimator import estimate_eta
                     from python.mobility.region_mapper import RegionMapper
                     mapper = RegionMapper()
-                    eta_sec = estimate_eta(current_gps, top_candidate, speed_mps=speed, region_mapper=mapper)
+                    eta_sec = estimate_eta(current_gps, predicted_next, speed_mps=speed, region_mapper=mapper)
                 except Exception:
                     eta_sec = round(max(5.0, 500.0 / max(speed, 1.0)), 2)
             else:
@@ -298,8 +460,12 @@ class PredictorEngine:
             session_id=session_id,
             model_version=self.config.model_version,
             probabilities=probabilities,
-            eta_sec=round(float(eta_sec), 2),
+            eta_sec=round(float(eta_sec), 2) if eta_sec is not None else None,
             computed_at_ms=now_ms,
+            for_edge=current,
+            route_terminal=route_terminal,
+            predicted_next_edge=predicted_next,
+            planned_route=planned_route or None,
         )
 
 
@@ -324,6 +490,26 @@ def health_check():
         "onnx_loaded": engine.onnx_session is not None,
         "training_source": engine.training_metadata.get("source"),
         "sequence_count": engine.training_metadata.get("sequence_count"),
+        "route_aware": True,
+    }
+
+
+@app.post("/session/route")
+def register_session_route(req: RouteRegisterRequest):
+    """Register the ordered edge path for an active simulation session."""
+    if not req.session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    if not req.planned_route:
+        raise HTTPException(status_code=400, detail="planned_route is required")
+    engine.session_store.set_planned_route(
+        req.session_id,
+        req.planned_route,
+        reset_history=req.reset_history,
+    )
+    return {
+        "status": "registered",
+        "session_id": req.session_id,
+        "planned_route": engine.session_store.get_planned_route(req.session_id),
     }
 
 
@@ -345,6 +531,12 @@ def predict_next_edge(req: PredictRequest):
 @app.post("/trajectory")
 def update_trajectory(update: TrajectoryUpdate):
     """Ingests trajectory sample to maintain active session state buffer."""
+    if update.planned_route:
+        engine.session_store.set_planned_route(
+            update.session_id,
+            update.planned_route,
+            reset_history=update.reset_route_history,
+        )
     engine.session_store.record_step(
         session_id=update.session_id,
         edge_id=update.edge_id,
