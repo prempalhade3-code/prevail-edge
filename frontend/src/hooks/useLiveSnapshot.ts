@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiGet, liveSocketUrl } from "../lib/api";
 import type { SystemSnapshot } from "../types";
 
-const WS_URL =
-  import.meta.env.VITE_WS_URL ??
-  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/live`;
-
-/** HUD React state only. The 3D world reads snapshotRef every frame. */
-const HUD_MS = 220;
+/** Throttle React HUD updates; the map still uses the latest snapshot. */
+const HUD_MS = 180;
 
 export function useLiveSnapshot() {
   const snapshotRef = useRef<SystemSnapshot | null>(null);
@@ -26,9 +23,9 @@ export function useLiveSnapshot() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const r = await fetch("/v1/snapshot");
-    if (!r.ok) throw new Error("snapshot fetch failed");
-    applySnapshot(await r.json());
+    applySnapshot(await apiGet<SystemSnapshot>("/v1/snapshot", 8000));
+    setConnected(true);
+    setError(null);
   }, [applySnapshot]);
 
   useEffect(() => {
@@ -36,7 +33,7 @@ export function useLiveSnapshot() {
     let cancelled = false;
 
     const connect = () => {
-      ws = new WebSocket(WS_URL);
+      ws = new WebSocket(liveSocketUrl());
       ws.onopen = () => {
         if (!cancelled) {
           setConnected(true);
@@ -54,14 +51,18 @@ export function useLiveSnapshot() {
         setConnected(false);
         if (!cancelled) setTimeout(connect, 2000);
       };
-      ws.onerror = () => setError("WebSocket error");
+      ws.onerror = () => setError(null);
     };
 
     connect();
-    refresh().catch(() => setError("Backend unreachable — start runtime + backend"));
+    refresh().catch(() => setError("Backend disconnected. Start the Docker mesh, then reload."));
+    const poll = window.setInterval(() => {
+      refresh().catch(() => undefined);
+    }, 2000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
       ws?.close();
     };
   }, [refresh, applySnapshot]);

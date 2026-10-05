@@ -2,54 +2,54 @@
   "regions": [
     {
       "edge_id": "edge-a",
-      "name": "ORR North Edge Node A",
-      "latitude": 12.920709,
-      "longitude": 77.663605,
-      "coverage_radius_m": 1341.0,
+      "name": "West Bengaluru",
+      "latitude": 12.9212,
+      "longitude": 77.6291,
+      "coverage_radius_m": 4200.0,
       "polygon": [
-        [12.9087, 77.6513],
-        [12.9327, 77.6513],
-        [12.9327, 77.6759],
-        [12.9087, 77.6759]
+        [12.898, 77.605],
+        [12.95, 77.605],
+        [12.95, 77.652],
+        [12.898, 77.652]
       ]
     },
     {
       "edge_id": "edge-b",
-      "name": "Tech Park Edge Node B",
-      "latitude": 12.928155,
-      "longitude": 77.681794,
-      "coverage_radius_m": 1341.0,
+      "name": "ORR Central",
+      "latitude": 12.9255,
+      "longitude": 77.676,
+      "coverage_radius_m": 3800.0,
       "polygon": [
-        [12.9161, 77.6695],
-        [12.9402, 77.6695],
-        [12.9402, 77.6941],
-        [12.9161, 77.6941]
+        [12.905, 77.652],
+        [12.945, 77.652],
+        [12.945, 77.692],
+        [12.905, 77.692]
       ]
     },
     {
       "edge_id": "edge-c",
-      "name": "Bellandur Junction Edge Node C",
-      "latitude": 12.94134,
-      "longitude": 77.696074,
-      "coverage_radius_m": 1341.0,
+      "name": "East Bengaluru",
+      "latitude": 12.9629,
+      "longitude": 77.7258,
+      "coverage_radius_m": 6200.0,
       "polygon": [
-        [12.9293, 77.6838],
-        [12.9534, 77.6838],
-        [12.9534, 77.7084],
-        [12.9293, 77.7084]
+        [12.938, 77.688],
+        [12.99, 77.688],
+        [12.99, 77.77],
+        [12.938, 77.77]
       ]
     },
     {
       "edge_id": "edge-d",
-      "name": "ORR South Edge Node D",
-      "latitude": 12.95699,
-      "longitude": 77.703291,
-      "coverage_radius_m": 1341.0,
+      "name": "South Bengaluru",
+      "latitude": 12.8448,
+      "longitude": 77.6632,
+      "coverage_radius_m": 5200.0,
       "polygon": [
-        [12.9449, 77.6910],
-        [12.9690, 77.6910],
-        [12.9690, 77.7156],
-        [12.9449, 77.7156]
+        [12.82, 77.63],
+        [12.9, 77.63],
+        [12.9, 77.7],
+        [12.82, 77.7]
       ]
     }
   ]

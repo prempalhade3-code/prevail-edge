@@ -124,6 +124,25 @@ app.add_middleware(
 )
 
 
+@app.get("/v1/geo")
+async def geo():
+    from python.mobility.road_graph import RoadGraph
+    from python.mobility.route_planner import city_ids, load_cities
+
+    graph = RoadGraph()
+    return {
+        "cities": load_cities(),
+        "city_ids": city_ids(),
+        "nodes": graph.nodes,
+        "links": [
+            {"from": src, "to": dst, "distance_m": dist}
+            for src, neighbors in graph.adj.items()
+            for dst, dist in neighbors
+            if src < dst
+        ],
+    }
+
+
 @app.get("/health")
 async def health():
     runtime_ok = await runtime.health()
@@ -290,8 +309,8 @@ async def ingest_trajectory(sample: dict):
 @app.post("/v1/sim/drive")
 async def sim_drive(body: dict = Body(...)):
     """Start a source→destination GPS drive through the live mesh."""
-    source = str(body.get("source") or body.get("from") or "edge-a")
-    destination = str(body.get("destination") or body.get("to") or "edge-d")
+    source = str(body.get("source") or body.get("from") or "electronic-city")
+    destination = str(body.get("destination") or body.get("to") or "whitefield")
     scenario = str(body.get("scenario") or "warm")
     tick_ms = int(body.get("tick_ms") or 350)
     include_images = bool(body.get("include_images", True))
@@ -314,8 +333,8 @@ async def sim_drive_status():
 async def sim_start(body: dict = Body(default={})):
     return await start_drive(
         runtime,
-        source=str(body.get("source") or "edge-a"),
-        destination=str(body.get("destination") or "edge-d"),
+        source=str(body.get("source") or "electronic-city"),
+        destination=str(body.get("destination") or "whitefield"),
         scenario=str(body.get("scenario") or "warm"),
         tick_ms=int(body.get("tick_ms") or 350),
         include_images=bool(body.get("include_images", True)),

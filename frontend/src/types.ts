@@ -1,5 +1,15 @@
 export type ShadowRole = "AUTHORITATIVE" | "WARM_SHADOW" | "IDLE";
 
+export type NavId =
+  | "live"
+  | "edges"
+  | "prediction"
+  | "shadows"
+  | "analytics"
+  | "timeline"
+  | "health"
+  | "resilience";
+
 export interface AuthorityToken {
   session_id: string;
   epoch: number;
@@ -28,7 +38,7 @@ export interface TimelineEvent {
   event_type: string;
   edge_id?: string;
   message: string;
-  payload?: Record<string, string>;
+  payload?: Record<string, string> | string;
 }
 
 export interface TopologyNode {
@@ -63,4 +73,67 @@ export interface SystemSnapshot {
     speed_mps: number;
   }[];
   predictor_degraded?: boolean;
+  tee_bytes?: number;
+  cpu_available_ratio?: number;
+  memory_available_ratio?: number;
+  rss_bytes?: number;
+  flink_job_id?: string;
+  edge_snapshots?: Record<string, { reachable?: boolean }>;
 }
+
+export interface DriveStatus {
+  accepted?: boolean;
+  running: boolean;
+  paused: boolean;
+  stopped: boolean;
+  scenario?: string | null;
+  path?: string[];
+  posted?: number;
+  total?: number;
+  error?: string | null;
+  control?: string;
+  source?: string;
+  destination?: string;
+  city_path?: string[];
+  wait_for_warm?: boolean;
+  warm_ready?: boolean;
+}
+
+export interface HealthStatus {
+  status: string;
+  service: string;
+  runtime_reachable: boolean;
+  postgres_enabled: boolean;
+  database: string;
+  drive?: DriveStatus;
+}
+
+export interface LiveAccuracy {
+  run_id: string;
+  handoffs_scored: number;
+  live_top1_accuracy: number | null;
+  live_top2_accuracy: number | null;
+  source: string;
+}
+
+export interface LiveMetrics {
+  transition_count: number;
+  shadow_count: number;
+  mode: string;
+  edges_reachable: number;
+  edges_total: number;
+  authority_holders_reported: string[];
+  single_authority_invariant: boolean;
+}
+
+export interface HistoryMetric {
+  run_id?: string;
+  metric_name: string;
+  value: number;
+  edge_id?: string;
+  timestamp_ms?: number;
+  metadata?: Record<string, string>;
+}
+
+export const EDGE_IDS = ["edge-a", "edge-b", "edge-c", "edge-d"] as const;
+export type EdgeId = (typeof EDGE_IDS)[number];

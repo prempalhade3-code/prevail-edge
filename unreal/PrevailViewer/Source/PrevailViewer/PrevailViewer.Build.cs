@@ -16,6 +16,7 @@ public class PrevailViewer : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"UMG",
+			"ProceduralMeshComponent",
 		});
 	}
 }

@@ -505,8 +505,8 @@ impl PrevailRuntime {
             {
                 let mut payload = pred
                     .probabilities
-                    .iter()
-                    .map(|(k, v)| (k.clone(), format!("{:.2}", v)))
+                .iter()
+                .map(|(k, v)| (k.clone(), format!("{:.2}", v)))
                     .collect::<HashMap<String, String>>();
                 if let Some(eta) = pred.eta_sec {
                     payload.insert("eta_sec".into(), format!("{eta:.3}"));
@@ -1361,7 +1361,7 @@ impl PrevailRuntime {
             if self.flink_checkpoint_restored && self.is_warm_shadow {
                 self.local_sync_ratio = self.local_sync_ratio.max(0.95);
             } else {
-                self.local_sync_ratio = 0.0;
+            self.local_sync_ratio = 0.0;
             }
             self.sync_lag_records = 0;
             return;

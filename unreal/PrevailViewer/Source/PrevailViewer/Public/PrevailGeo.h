@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 
 /**
- * Same local frame as frontend/src/lib/geo.ts and sim/network/build_city.py.
- * Unreal units are centimetres. X = east, Y = north, Z = up.
+ * Same local frame as frontend/src/lib/geo.ts and scene.json.
+ * x = east metres, z = -north metres. Unreal: X = east cm, Y = scene z cm, Z = up.
  */
 namespace PrevailGeo
 {
@@ -17,16 +17,33 @@ namespace PrevailGeo
 		return MetersPerDegLat * FMath::Cos(FMath::DegreesToRadians(OriginLat));
 	}
 
-	inline FVector LatLonToUnreal(double Lat, double Lon, double HeightCm = 40.0)
+	inline void LatLonToScene(double Lat, double Lon, double& OutX, double& OutZ)
 	{
-		const double EastM = (Lon - OriginLon) * MetersPerDegLon();
-		const double NorthM = (Lat - OriginLat) * MetersPerDegLat;
-		return FVector(EastM * 100.0, NorthM * 100.0, HeightCm);
+		OutX = (Lon - OriginLon) * MetersPerDegLon();
+		OutZ = -(Lat - OriginLat) * MetersPerDegLat;
 	}
 
-	/** Compass degrees clockwise from north → Unreal yaw (0 = +X east). */
+	inline FVector SceneToUnreal(double SceneX, double SceneZ, double HeightCm = 40.0)
+	{
+		return FVector(SceneX * 100.0, SceneZ * 100.0, HeightCm);
+	}
+
+	inline FVector LatLonToUnreal(double Lat, double Lon, double HeightCm = 40.0)
+	{
+		double X = 0.0;
+		double Z = 0.0;
+		LatLonToScene(Lat, Lon, X, Z);
+		return SceneToUnreal(X, Z, HeightCm);
+	}
+
+	/** Compass clockwise from north. Unreal yaw 0 = +X east, Y = scene z = -north. */
 	inline float HeadingToYaw(double HeadingDeg)
 	{
-		return static_cast<float>(90.0 - HeadingDeg);
+		return static_cast<float>(HeadingDeg - 90.0);
+	}
+
+	inline float SceneYawToUnreal(double YawRad)
+	{
+		return static_cast<float>(-FMath::RadiansToDegrees(YawRad));
 	}
 }

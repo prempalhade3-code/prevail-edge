@@ -1,3 +1,5 @@
+@import "leaflet/dist/leaflet.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,20 +9,149 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  background: #09090b;
-  font-family: Outfit, Inter, system-ui, sans-serif;
+  background:
+    radial-gradient(1100px 520px at 6% -12%, rgba(37, 99, 235, 0.07), transparent 58%),
+    radial-gradient(900px 480px at 100% 0%, rgba(109, 40, 217, 0.05), transparent 52%),
+    #e9edf3;
+  color: #0b1220;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #e8edf3;
+  font-family: inherit;
+}
+
+.leaflet-control-zoom {
+  border: 0 !important;
+  box-shadow: 0 12px 28px rgba(11, 18, 32, 0.12) !important;
+}
+
+.leaflet-control-zoom a {
+  color: #0b1220 !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+}
+
+.edge-node,
+.vehicle-marker-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.edge-chip {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 22px rgba(11, 18, 32, 0.16);
+}
+
+.edge-chip strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0b1220;
+}
+
+.edge-server {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.edge-diamond {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #334155;
+  background: #fff;
+  transform: rotate(45deg);
+}
+
+.edge-caption,
+.city-label span:last-child {
+  font: 600 11px/1.1 Inter, system-ui;
+  color: #0b1220;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(11, 18, 32, 0.12);
+}
+
+.city-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.city-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92);
+}
+
+.edge-pulse {
+  position: absolute;
+  inset: -9px;
+  border-radius: 999px;
+  animation: pulseSoft 2.2s ease-in-out infinite;
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.1;
+    transform: scale(1.5);
+  }
+}
+
+.vehicle-marker {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 12px 18px rgba(37, 99, 235, 0.28));
 }
 
 @layer components {
-  .hud-panel {
-    @apply rounded-2xl border border-white/10 bg-zinc-950/75 shadow-2xl backdrop-blur-xl;
+  .panel {
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    background: rgba(247, 249, 252, 0.94);
+    box-shadow: 0 18px 50px -28px rgba(11, 18, 32, 0.22);
+    backdrop-filter: blur(20px);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40;
   }
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(11, 18, 32, 0.14);
   border-radius: 99px;
 }

@@ -1,8 +1,4 @@
-"""Plan a corridor route between two PREVAIL edges and emit GPS ticks.
-
-Ticks follow the ORR polyline in deploy/config/corridor-waypoints.json, not
-straight lines between edge centroids.
-"""
+"""Plan a city-to-city route and emit GPS ticks mapped onto the 4 edge regions."""
 
 from __future__ import annotations
 
@@ -15,13 +11,12 @@ from typing import Dict, List, Optional, Tuple
 from python.mobility.region_mapper import RegionMapper
 from python.mobility.road_graph import RoadGraph
 
-# Minimal valid JPEG (1x1) used when the drive requests image-class work.
 MIN_JPEG = (
     b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
     b"\xff\xdb\x00C\x00"
     + bytes([8] * 64)
     + b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
-    b"\xff\xc4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    b"\xff\xc4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x7f\xff\xd9"
 )
 
@@ -29,6 +24,20 @@ MIN_JPEG = (
 def _waypoints_path() -> Path:
     root = Path(__file__).resolve().parents[2]
     return root / "deploy" / "config" / "corridor-waypoints.json"
+
+
+def _cities_path() -> Path:
+    root = Path(__file__).resolve().parents[2]
+    return root / "deploy" / "config" / "cities.json"
+
+
+def load_cities(path: Optional[str] = None) -> List[dict]:
+    raw = json.loads(Path(path or _cities_path()).read_text(encoding="utf-8"))
+    return list(raw.get("cities") or [])
+
+
+def city_ids() -> List[str]:
+    return [c["id"] for c in load_cities()]
 
 
 def load_corridor_waypoints(path: Optional[str] = None) -> List[Tuple[float, float]]:
@@ -74,25 +83,13 @@ def _heading(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     return (math.degrees(math.atan2(dx, dy)) + 360.0) % 360.0
 
 
-def _nearest_index(pts: List[Tuple[float, float]], target: Tuple[float, float]) -> int:
-    best_i, best_d = 0, float("inf")
-    for i, pt in enumerate(pts):
-        d = (pt[0] - target[0]) ** 2 + (pt[1] - target[1]) ** 2
-        if d < best_d:
-            best_i, best_d = i, d
-    return best_i
-
-
 def _resample(pts: List[Tuple[float, float]], count: int) -> List[Tuple[float, float]]:
     if count <= 1 or len(pts) == 1:
         return [pts[0]]
-    if len(pts) == 2 and count == 2:
-        return list(pts)
     dist = [0.0]
     for i in range(1, len(pts)):
         dist.append(
-            dist[-1]
-            + math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+            dist[-1] + math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
         )
     total = dist[-1] or 1e-9
     out: List[Tuple[float, float]] = []
@@ -108,20 +105,43 @@ def _resample(pts: List[Tuple[float, float]], count: int) -> List[Tuple[float, f
     return out
 
 
+def edge_sequence(path: List[str], graph: RoadGraph) -> List[str]:
+    seq: List[str] = []
+    for node_id in path:
+        zone = graph.nodes.get(node_id, {}).get("edge_id")
+        if zone and (not seq or seq[-1] != zone):
+            seq.append(zone)
+    return seq
+
+
 def corridor_slice(
     source: str,
     destination: str,
     *,
     mapper: Optional[RegionMapper] = None,
     waypoints: Optional[List[Tuple[float, float]]] = None,
+    graph: Optional[RoadGraph] = None,
 ) -> List[Tuple[float, float]]:
+    graph = graph or RoadGraph()
+    path = shortest_path(graph, source, destination)
+    if path:
+        geom = graph.path_geometry(path)
+        if geom:
+            return geom
     mapper = mapper or RegionMapper()
     pts = waypoints or load_corridor_waypoints()
     centers = {r["edge_id"]: (r["latitude"], r["longitude"]) for r in mapper.regions}
     if source not in centers or destination not in centers:
-        raise ValueError(f"unknown edge {source}->{destination}")
-    i0 = _nearest_index(pts, centers[source])
-    i1 = _nearest_index(pts, centers[destination])
+        raise ValueError(f"unknown route {source}->{destination}")
+    def nearest(target: Tuple[float, float]) -> int:
+        best_i, best_d = 0, float("inf")
+        for i, pt in enumerate(pts):
+            d = (pt[0] - target[0]) ** 2 + (pt[1] - target[1]) ** 2
+            if d < best_d:
+                best_i, best_d = i, d
+        return best_i
+    i0 = nearest(centers[source])
+    i1 = nearest(centers[destination])
     if i0 == i1:
         return [pts[i0]]
     if i0 < i1:
@@ -140,13 +160,13 @@ def plan_ticks(
     include_images: bool = True,
     divert_wrong: bool = False,
 ) -> List[dict]:
-    """Return trajectory samples along the ORR polyline.
-
-    linger_first keeps the vehicle on the first edge long enough for
-    checkpoint + ShadowCreate + Flink restore before the first boundary.
-    """
+    """Return trajectory samples along the city-to-city road geometry."""
+    if source == destination:
+        raise ValueError("Choose a different destination.")
     mapper = mapper or RegionMapper()
     graph = graph or RoadGraph()
+    if source not in graph.adj or destination not in graph.adj:
+        raise ValueError(f"unknown city {source}->{destination}")
     path = shortest_path(graph, source, destination)
     if not path:
         raise ValueError(f"no route from {source} to {destination}")
@@ -157,12 +177,11 @@ def plan_ticks(
         if neighbors:
             path = [source, neighbors[0]]
 
-    pts = corridor_slice(path[0], path[-1], mapper=mapper)
+    pts = graph.path_geometry(path)
     if len(pts) < 2:
-        raise ValueError(f"corridor has no geometry from {source} to {destination}")
+        raise ValueError(f"road graph has no geometry from {source} to {destination}")
 
-    first_center = next(r for r in mapper.regions if r["edge_id"] == path[0])
-    first_pt = (first_center["latitude"], first_center["longitude"])
+    origin = (float(graph.nodes[source]["latitude"]), float(graph.nodes[source]["longitude"]))
     total = linger_first + max(steps_per_leg * max(1, len(path) - 1), 8)
     sampled = _resample(pts, total)
 
@@ -171,12 +190,10 @@ def plan_ticks(
 
     image_b64 = base64.b64encode(MIN_JPEG).decode("ascii")
     for step, (lat, lon) in enumerate(sampled):
-        # Hold on the first-edge centroid for the linger window so speculation
-        # and Flink restore finish before the vehicle leaves the box.
         if step < linger_first:
-            lat, lon = first_pt
+            lat, lon = origin
             nxt = sampled[min(step + 1, len(sampled) - 1)]
-            heading = _heading(first_pt, nxt)
+            heading = _heading(origin, nxt)
         else:
             nxt = sampled[min(step + 1, len(sampled) - 1)]
             heading = _heading((lat, lon), nxt)

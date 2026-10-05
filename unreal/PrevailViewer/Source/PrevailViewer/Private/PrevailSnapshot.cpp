@@ -30,7 +30,8 @@ bool ParsePrevailSnapshot(const FString& Json, FPrevailSnapshot& OutSnapshot)
 		{
 			for (const auto& Pair : (*Probs)->Values)
 			{
-				if (Pair.Key == OutSnapshot.CurrentEdgeId)
+				const FString EdgeId(Pair.Key);
+				if (EdgeId == OutSnapshot.CurrentEdgeId)
 				{
 					continue;
 				}
@@ -38,7 +39,7 @@ bool ParsePrevailSnapshot(const FString& Json, FPrevailSnapshot& OutSnapshot)
 				if (P > OutSnapshot.PredictionConfidence)
 				{
 					OutSnapshot.PredictionConfidence = P;
-					OutSnapshot.PredictedEdgeId = Pair.Key;
+					OutSnapshot.PredictedEdgeId = EdgeId;
 				}
 			}
 		}

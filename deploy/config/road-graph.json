@@ -1,11 +1,142 @@
 {
-  "nodes": ["edge-a", "edge-b", "edge-c", "edge-d"],
+  "nodes": {
+    "electronic-city": {
+      "type": "city",
+      "name": "Electronic City",
+      "latitude": 12.8448,
+      "longitude": 77.6632,
+      "edge_id": "edge-d"
+    },
+    "silk-board": {
+      "type": "city",
+      "name": "Silk Board",
+      "latitude": 12.9175,
+      "longitude": 77.622,
+      "edge_id": "edge-a"
+    },
+    "koramangala": {
+      "type": "city",
+      "name": "Koramangala",
+      "latitude": 12.9344,
+      "longitude": 77.6265,
+      "edge_id": "edge-a"
+    },
+    "hsr-layout": {
+      "type": "city",
+      "name": "HSR Layout",
+      "latitude": 12.9116,
+      "longitude": 77.6389,
+      "edge_id": "edge-a"
+    },
+    "bellandur": {
+      "type": "city",
+      "name": "Bellandur",
+      "latitude": 12.9255,
+      "longitude": 77.676,
+      "edge_id": "edge-b"
+    },
+    "marathahalli": {
+      "type": "city",
+      "name": "Marathahalli",
+      "latitude": 12.956,
+      "longitude": 77.7016,
+      "edge_id": "edge-c"
+    },
+    "whitefield": {
+      "type": "city",
+      "name": "Whitefield",
+      "latitude": 12.9698,
+      "longitude": 77.7499,
+      "edge_id": "edge-c"
+    }
+  },
   "edges": [
-    {"from": "edge-a", "to": "edge-b", "distance_m": 2200},
-    {"from": "edge-b", "to": "edge-a", "distance_m": 2200},
-    {"from": "edge-b", "to": "edge-c", "distance_m": 2100},
-    {"from": "edge-c", "to": "edge-b", "distance_m": 2100},
-    {"from": "edge-c", "to": "edge-d", "distance_m": 1950},
-    {"from": "edge-d", "to": "edge-c", "distance_m": 1950}
+    {
+      "from": "electronic-city",
+      "to": "silk-board",
+      "waypoints": [
+        [12.8448, 77.6632],
+        [12.86, 77.658],
+        [12.88, 77.645],
+        [12.9, 77.632],
+        [12.9175, 77.622]
+      ]
+    },
+    {
+      "from": "silk-board",
+      "to": "koramangala",
+      "waypoints": [
+        [12.9175, 77.622],
+        [12.925, 77.624],
+        [12.9344, 77.6265]
+      ]
+    },
+    {
+      "from": "silk-board",
+      "to": "hsr-layout",
+      "waypoints": [
+        [12.9175, 77.622],
+        [12.9145, 77.6305],
+        [12.9116, 77.6389]
+      ]
+    },
+    {
+      "from": "koramangala",
+      "to": "hsr-layout",
+      "waypoints": [
+        [12.9344, 77.6265],
+        [12.922, 77.632],
+        [12.9116, 77.6389]
+      ]
+    },
+    {
+      "from": "hsr-layout",
+      "to": "bellandur",
+      "waypoints": [
+        [12.9116, 77.6389],
+        [12.914, 77.652],
+        [12.918, 77.664],
+        [12.9222, 77.6709],
+        [12.9255, 77.676]
+      ]
+    },
+    {
+      "from": "koramangala",
+      "to": "bellandur",
+      "waypoints": [
+        [12.9344, 77.6265],
+        [12.93, 77.645],
+        [12.928, 77.66],
+        [12.9255, 77.676]
+      ]
+    },
+    {
+      "from": "bellandur",
+      "to": "marathahalli",
+      "waypoints": [
+        [12.9255, 77.676],
+        [12.92688, 77.67821],
+        [12.928155, 77.681794],
+        [12.93042, 77.68516],
+        [12.93318, 77.68842],
+        [12.93641, 77.69188],
+        [12.94134, 77.696074],
+        [12.94488, 77.69862],
+        [12.94872, 77.70041],
+        [12.95261, 77.70188],
+        [12.956, 77.7016]
+      ]
+    },
+    {
+      "from": "marathahalli",
+      "to": "whitefield",
+      "waypoints": [
+        [12.956, 77.7016],
+        [12.958, 77.715],
+        [12.962, 77.728],
+        [12.966, 77.74],
+        [12.9698, 77.7499]
+      ]
+    }
   ]
 }

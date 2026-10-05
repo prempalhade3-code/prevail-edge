@@ -1,48 +1,63 @@
-import type { PredictionResult } from "../types";
+import { Brain } from "lucide-react";
+import { allEdgeProbabilities, edgeLabel, fmtPct, topPredicted } from "../lib/format";
+import type { SystemSnapshot } from "../types";
+import { EmptyState, SectionLabel, StatusPill } from "./ui";
 
-export function PredictionPanel({
-  prediction,
-  currentEdge,
-  degraded = false,
-}: {
-  prediction: PredictionResult | null;
-  currentEdge: string;
-  degraded?: boolean;
-}) {
+export function PredictionPanel({ snapshot }: { snapshot: SystemSnapshot | null }) {
+  const prediction = snapshot?.prediction;
+  const top = topPredicted(prediction?.probabilities);
+  const ranked = allEdgeProbabilities(prediction?.probabilities).sort((a, b) => b.value - a.value);
+
   if (!prediction) {
-    return <div className="hud-panel p-4 text-sm text-white/45">Waiting for predictor…</div>;
+    return (
+      <div className="panel p-5">
+        <SectionLabel>Next edge prediction</SectionLabel>
+        <div className="mt-4">
+          <EmptyState
+            title="No prediction yet"
+            detail="Start a simulation so the ONNX predictor can score the next edge."
+          />
+        </div>
+      </div>
+    );
   }
 
-  const data = Object.entries(prediction.probabilities)
-    .filter(([id]) => id !== currentEdge)
-    .map(([edge, value]) => ({ edge, pct: Math.round(value * 100) }))
-    .sort((a, b) => b.pct - a.pct);
-
   return (
-    <div className="hud-panel p-4">
-      <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">Next edge</h2>
-      {degraded && (
-        <p className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-200">
-          Predictor degraded — fallback ranking
-        </p>
-      )}
-      <ul className="space-y-2">
-        {data.map((d) => (
-          <li key={d.edge}>
-            <div className="mb-1 flex justify-between font-mono text-xs">
-              <span>{d.edge}</span>
-              <span className="text-sky-300">{d.pct}%</span>
+    <div className="panel p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <SectionLabel>Next edge prediction</SectionLabel>
+          <p className="mt-2 flex items-center gap-2 text-xl font-semibold tracking-tight text-ink">
+            <Brain className="h-5 w-5 text-indigo-600" />
+            {edgeLabel(top.edge)}
+          </p>
+          <p className="mt-1 text-sm text-stone-500">{fmtPct(top.confidence)} confidence</p>
+        </div>
+        <StatusPill tone={snapshot?.predictor_degraded ? "amber" : "indigo"}>
+          {snapshot?.predictor_degraded ? "Degraded" : "ONNX live"}
+        </StatusPill>
+      </div>
+      <ol className="mt-5 space-y-3">
+        {ranked.map((row, index) => (
+          <li key={row.edge}>
+            <div className="mb-1 flex items-center justify-between text-sm">
+              <span className="font-medium text-stone-700">
+                {index + 1}. {edgeLabel(row.edge)}
+              </span>
+              <span className="font-mono text-stone-600">{fmtPct(row.value)}</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full bg-sky-400" style={{ width: `${d.pct}%` }} />
+            <div className="h-2 overflow-hidden rounded-full bg-stone-100">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-teal-500 transition-all duration-700"
+                style={{ width: `${Math.max(2, row.value * 100)}%` }}
+              />
             </div>
           </li>
         ))}
-      </ul>
-      {prediction.eta_sec != null && (
-        <p className="mt-3 text-xs text-white/45">ETA ~{prediction.eta_sec.toFixed(0)}s</p>
+      </ol>
+      {prediction.model_version && (
+        <p className="mt-4 text-xs text-stone-400">{prediction.model_version}</p>
       )}
-      <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-white/30">{prediction.model_version}</p>
     </div>
   );
 }

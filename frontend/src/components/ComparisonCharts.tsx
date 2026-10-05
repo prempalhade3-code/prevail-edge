@@ -1,3 +1,4 @@
+import { payload } from "../lib/events";
 import type { SystemSnapshot, TimelineEvent } from "../types";
 
 function num(payload: Record<string, string> | undefined, key: string): number | null {
@@ -13,19 +14,20 @@ function measuredLatencies(events: TimelineEvent[]) {
   const starts = new Map<string, number>();
 
   for (const ev of events) {
-    const target = ev.payload?.to_edge || ev.payload?.to || ev.edge_id;
+    const data = payload(ev);
+    const target = data.to_edge || data.to || ev.edge_id;
     if (ev.event_type === "HandoffDetected" && target) {
       starts.set(target, ev.timestamp_ms);
     }
     if (ev.event_type !== "AuthorityTransferred") continue;
-    const explicit = num(ev.payload, "latency_ms");
+    const explicit = num(data, "latency_ms");
     const paired =
       target && starts.has(target)
         ? ev.timestamp_ms - (starts.get(target) ?? ev.timestamp_ms)
         : null;
     const latency = explicit ?? (paired != null && paired > 0 ? paired : null);
     if (latency == null || latency < 0) continue;
-    const mode = ev.payload?.transfer_mode || (ev.message.includes("reactive") ? "reactive" : "warm");
+    const mode = data.transfer_mode || (ev.message.includes("reactive") ? "reactive" : "warm");
     if (mode === "reactive") reactive.push(latency);
     else warm.push(latency);
   }
