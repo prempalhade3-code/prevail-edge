@@ -35,7 +35,7 @@ public:
 	FString BackendUrl = TEXT("http://127.0.0.1:8000");
 
 	UPROPERTY(EditAnywhere, Category = "PREVAIL")
-	float PollSeconds = 0.08f;
+	float PollSeconds = 0.10f;
 
 private:
 	bool TickPoll(float DeltaTime);

@@ -39,7 +39,7 @@ void UPrevailLiveSubsystem::Poll()
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	FString Url = BackendUrl;
 	Url.RemoveFromEnd(TEXT("/"));
-	Request->SetURL(Url + TEXT("/v1/snapshot"));
+	Request->SetURL(Url + TEXT("/v1/live"));
 	Request->SetVerb(TEXT("GET"));
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	Request->OnProcessRequestComplete().BindUObject(this, &UPrevailLiveSubsystem::OnResponse);
