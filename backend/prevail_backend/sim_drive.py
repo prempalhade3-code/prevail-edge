@@ -44,7 +44,19 @@ async def start_drive(
     if _STATE["running"]:
         return {"accepted": False, "error": "drive already running", **status()}
 
-    from python.mobility.route_planner import plan_ticks
+    from python.mobility.route_planner import city_ids, plan_ticks, shortest_path
+    from python.mobility.road_graph import RoadGraph
+
+    if source == destination:
+        return {"accepted": False, **status(), "error": "Choose a different destination."}
+    known = set(city_ids())
+    if source not in known or destination not in known:
+        return {"accepted": False, **status(), "error": "Choose a supported city."}
+
+    graph = RoadGraph()
+    city_path = shortest_path(graph, source, destination)
+    if not city_path:
+        return {"accepted": False, **status(), "error": "No road route between those cities."}
 
     ticks = plan_ticks(
         source,
@@ -53,6 +65,7 @@ async def start_drive(
         steps_per_leg=28,
         include_images=include_images,
         divert_wrong=scenario == "wrong",
+        graph=graph,
     )
     _set(
         running=True,
@@ -66,6 +79,7 @@ async def start_drive(
         error=None,
         control="running",
         path=list(dict.fromkeys(t["edge_id"] for t in ticks)),
+        city_path=city_path,
         wait_for_warm=scenario == "warm",
     )
     _TASK = asyncio.create_task(_pump(runtime, ticks, max(80, tick_ms), scenario))
