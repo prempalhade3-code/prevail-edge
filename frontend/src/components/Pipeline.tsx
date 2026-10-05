@@ -33,9 +33,9 @@ export function Pipeline({
       })
     : [];
   const current = active[active.length - 1];
-  const refused = live ? latestOf(events, ["ShadowRefused"]) : undefined;
+  const refused = live ? latestOf(events, ["ShadowCreateFailed", "ShadowError"]) : undefined;
   const handoffFailed = live
-    ? latestOf(events, ["WrongPrediction", "MigrationFallbackComplete"])
+    ? latestOf(events, ["WrongPrediction", "MigrationFailed", "StateRestoreFailed"])
     : undefined;
   const failedStep = handoffFailed ? "handoff" : refused && !active.includes("shadow") ? "shadow" : null;
 

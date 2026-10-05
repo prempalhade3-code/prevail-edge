@@ -21,7 +21,25 @@ export function LiveNow({
   const live = Boolean(drive?.running);
   const from = live && drive?.source ? drive.source : source;
   const to = live && drive?.destination ? drive.destination : destination;
-  const ranked = live ? rankedPredictions(snapshot?.prediction?.probabilities).slice(0, 3) : [];
+  const holder = live ? snapshot?.authority.holder_edge_id : undefined;
+  const currentEdge = live ? snapshot?.current_edge_id : undefined;
+  const prediction = live ? snapshot?.prediction : null;
+  const routeTerminal = Boolean(
+    prediction?.route_terminal ||
+      (currentEdge &&
+        drive?.path?.length &&
+        currentEdge === drive.path[drive.path.length - 1]),
+  );
+  const predictionStale =
+    Boolean(
+      prediction?.for_edge &&
+        currentEdge &&
+        prediction.for_edge !== currentEdge,
+    );
+  const ranked =
+    live && !routeTerminal && !predictionStale
+      ? rankedPredictions(prediction?.probabilities).slice(0, 3)
+      : [];
   const shadow = live ? (snapshot?.shadows ?? []).find((s) => s.role === "WARM_SHADOW") : undefined;
   const sync = live ? latestSyncRatio(events, shadow?.sync_ratio) : undefined;
   const transfer = live ? latestOf(events, ["AuthorityTransferred"]) : undefined;
@@ -29,8 +47,6 @@ export function LiveNow({
   const fallback = live ? latestOf(events, ["MigrationFallbackComplete"]) : undefined;
   const refused = live ? latestOf(events, ["ShadowRefused"]) : undefined;
   const mode = transferMode(transfer);
-  const holder = live ? snapshot?.authority.holder_edge_id : undefined;
-  const currentEdge = live ? snapshot?.current_edge_id : undefined;
   const src = cityFor(from);
   const holding =
     live &&
@@ -52,13 +68,21 @@ export function LiveNow({
   else if (transfer && mode === "reactive") handoff = "reactive handoff";
   else if (transfer) handoff = "completed";
   else if (refused && !shadow) handoff = "waiting";
-  else if (drive?.wait_for_warm) handoff = "waiting";
+  else if (drive?.warm_state === "timeout") handoff = "warm timeout — reactive path";
+  else if (drive?.wait_for_warm && drive.warm_state === "waiting") handoff = "preparing warm shadow";
 
   let shadowState = "no active shadow";
-  if (shadow) {
-    if (sync != null && sync < 0.95) shadowState = `syncing ${fmtPct(sync)}`;
-    else if (sync != null && sync >= 0.95) shadowState = "warm";
-    else shadowState = "ready";
+  if (drive?.warm_state === "timeout") {
+    shadowState = "warm timeout — not ready";
+  } else if (drive?.warm_state === "failed") {
+    shadowState = "shadow prep failed";
+  } else if (shadow) {
+    if (drive?.warm_state === "ready" || (sync != null && sync >= 0.95)) shadowState = "warm";
+    else if (sync != null && sync < 0.95) shadowState = `syncing ${fmtPct(sync)}`;
+    else if (drive?.warm_state === "waiting") shadowState = "preparing";
+    else shadowState = "active";
+  } else if (drive?.warm_state === "waiting") {
+    shadowState = "preparing";
   }
 
   return (
@@ -88,7 +112,15 @@ export function LiveNow({
         </Block>
 
         <Block label="ai prediction">
-          {ranked.length ? (
+          {routeTerminal ? (
+            <>
+              <p className="text-sm text-muted">next likely edge</p>
+              <p className="mt-1 text-sm font-semibold text-ink">none</p>
+              <p className="mt-0.5 text-sm text-muted">destination approaching</p>
+            </>
+          ) : predictionStale ? (
+            <p className="text-sm text-muted">updating prediction…</p>
+          ) : ranked.length ? (
             <>
               <p className="text-sm text-muted">next likely edge</p>
               <p className="mt-1 text-sm font-semibold text-ink">
