@@ -51,3 +51,14 @@ export function angleDelta(from: number, to: number): number {
 export function lerpAngle(from: number, to: number, t: number): number {
   return from + angleDelta(from, to) * t;
 }
+
+export function metersBetween(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const r = 6371000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLon = ((bLon - aLon) * Math.PI) / 180;
+  const lat1 = (aLat * Math.PI) / 180;
+  const lat2 = (bLat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(h)));
+}
