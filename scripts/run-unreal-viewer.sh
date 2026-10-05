@@ -10,10 +10,13 @@ find_editor() {
     return
   fi
   local candidates=(
+    "/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor"
     "/Users/Shared/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor"
+    "/Users/Shared/Epic Games/UE_5.7/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor"
     "/Users/Shared/Epic Games/UE_5.7/Engine/Binaries/Mac/UnrealEditor"
     "/Users/Shared/Epic Games/UE_5.6/Engine/Binaries/Mac/UnrealEditor"
     "/Users/Shared/Epic Games/UE_5.5/Engine/Binaries/Mac/UnrealEditor"
+    "$HOME/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor"
     "$HOME/Epic Games/UE_5.8/Engine/Binaries/Mac/UnrealEditor"
     "$HOME/Epic Games/UE_5.7/Engine/Binaries/Mac/UnrealEditor"
     "$HOME/Epic Games/UE_5.5/Engine/Binaries/Mac/UnrealEditor"
@@ -30,7 +33,14 @@ find_editor() {
 
 if EDITOR="$(find_editor)"; then
   echo "[prevail-ue] opening $PROJECT"
-  exec "$EDITOR" "$PROJECT"
+  echo "[prevail-ue] mesh must stay on http://127.0.0.1:8000"
+  echo "[prevail-ue] click the PrevailViewer window; first launch compiles Metal shaders"
+  # Launch Services is required so macOS creates a real Unreal window.
+  APP="${EDITOR%.app/Contents/MacOS/UnrealEditor}.app"
+  if [[ "$APP" == *.app && -d "$APP" ]]; then
+    exec open -na "$APP" --args "$PROJECT" -game -windowed -resx=1280 -resy=720 -log
+  fi
+  exec "$EDITOR" "$PROJECT" -game -windowed -resx=1280 -resy=720 -log
 fi
 
 echo "Unreal Engine 5 is not installed yet."
