@@ -1,6 +1,6 @@
-import { cityRoute } from "./cities";
+import { roadRoute } from "../lib/roadGraphRoute";
 
-/** Preview geometry for a city→city selection. Backend plan_ticks is authoritative after Start. */
+/** Preview geometry — same road-graph.json + weighted shortest path as backend plan_ticks. */
 export function corridorSlice(source: string, destination: string): [number, number][] {
-  return cityRoute(source, destination);
+  return roadRoute(source, destination);
 }

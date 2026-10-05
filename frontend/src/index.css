@@ -38,94 +38,458 @@ body,
   line-height: 32px !important;
 }
 
-.edge-node,
+.map-icon-wrap,
 .vehicle-marker-wrap {
   background: transparent;
   border: 0;
 }
 
-.edge-chip {
-  display: grid;
-  place-items: center;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 22px rgba(11, 18, 32, 0.16);
+.prevail-map {
+  --map-mark-scale: 1;
 }
 
-.edge-chip strong {
-  font-size: 12px;
-  font-weight: 700;
-  color: #0b1220;
+.leaflet-container.prevail-map {
+  cursor: grab;
 }
 
-.edge-server {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+.leaflet-container.prevail-map.leaflet-dragging {
+  cursor: grabbing;
 }
 
-.edge-diamond {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #334155;
-  background: #fff;
-  transform: rotate(45deg);
+/* ── Map visual overlay units ── */
+.map-visual-layer {
+  pointer-events: none;
 }
 
-.edge-caption,
-.city-label span:last-child {
-  font: 600 11px/1.1 Inter, system-ui;
-  color: #0b1220;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 4px 8px;
-  border-radius: 999px;
-  box-shadow: 0 8px 18px rgba(11, 18, 32, 0.12);
-}
-
-.city-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.city-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 99px;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92);
-}
-
-.edge-pulse {
+.map-visual-item {
   position: absolute;
-  inset: -9px;
-  border-radius: 999px;
-  animation: pulseSoft 2.2s ease-in-out infinite;
+  top: 0;
+  left: 0;
 }
 
-@keyframes pulseSoft {
+.map-visual-item .map-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  gap: 5px;
+  transform: scale(var(--map-mark-scale, 1));
+  transform-origin: 50% 100%;
+}
+
+.map-label-pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 1px 4px rgba(11, 18, 32, 0.06);
+  font: 600 11px/1.25 Inter, system-ui, sans-serif;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+}
+
+.map-label-source {
+  color: #1e40af;
+}
+
+.map-label-destination {
+  color: #9d174d;
+}
+
+.map-label-edge {
+  color: #475569;
+  font-weight: 600;
+}
+
+.map-label-city {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 10.5px;
+  padding: 3px 8px;
+}
+
+.map-unit-city-route .map-label-city {
+  color: #334155;
+  font-weight: 600;
+}
+
+.map-visual-leader-line {
+  stroke: rgba(71, 85, 105, 0.38);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.map-visual-anchor-dot {
+  fill: #475569;
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 1.5;
+}
+
+/* ── Route city dot ── */
+.city-waypoint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: #64748b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
+}
+
+.map-unit-city-route .city-waypoint-dot {
+  width: 7px;
+  height: 7px;
+  background: #334155;
+}
+
+/* ── Edge infrastructure tower ── */
+.map-unit-tower {
+  position: relative;
+  filter: drop-shadow(0 1px 3px rgba(11, 18, 32, 0.18));
+}
+
+.map-unit-flag {
+  filter: drop-shadow(0 1px 4px rgba(11, 18, 32, 0.1));
+}
+
+.tower-svg .tower-frame {
+  fill: #141820;
+  stroke: #0a0c10;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.tower-svg .tower-ground {
+  fill: rgba(10, 12, 16, 0.28);
+}
+
+.tower-svg .tower-rung {
+  stroke: #3d4654;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.tower-svg .tower-node {
+  fill: #4a1520;
+  stroke: #2a0a10;
+  stroke-width: 0.4;
+}
+
+/* follower / shadow / idle — dark tower, no indicator light */
+.edge-tower-follower .tower-beacon,
+.edge-tower-follower .tower-beacon-core,
+.edge-tower-follower .tower-beacon-halo,
+.edge-tower-shadow .tower-beacon,
+.edge-tower-shadow .tower-beacon-core,
+.edge-tower-shadow .tower-beacon-halo,
+.edge-tower-idle .tower-beacon,
+.edge-tower-idle .tower-beacon-core,
+.edge-tower-idle .tower-beacon-halo {
+  display: none;
+}
+
+.edge-tower-failed {
+  opacity: 0.5;
+}
+
+/* authority — triangle ring + illuminated signal while authoritative */
+.tower-authority-triangle {
+  position: absolute;
+  left: 50%;
+  bottom: 28%;
+  width: 72px;
+  height: 64px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.92;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.55));
+  animation: authorityTrianglePulse 2.6s ease-in-out infinite;
+}
+
+.tower-authority-triangle-svg {
+  display: block;
+  overflow: visible;
+}
+
+.tower-authority-triangle-fill {
+  fill: rgba(37, 99, 235, 0.14);
+}
+
+.tower-authority-triangle-stroke {
+  fill: none;
+  stroke: rgba(37, 99, 235, 0.88);
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+}
+
+@keyframes authorityTrianglePulse {
   0%,
   100% {
-    opacity: 0.34;
-    transform: scale(1);
+    opacity: 0.78;
+    transform: translateX(-50%) scale(0.96);
   }
   50% {
-    opacity: 0.1;
-    transform: scale(1.5);
+    opacity: 1;
+    transform: translateX(-50%) scale(1.04);
   }
 }
 
-.vehicle-marker {
-  width: 48px;
-  height: 48px;
+.tower-authority-glow {
+  position: absolute;
+  left: 50%;
+  bottom: 36%;
+  width: 88px;
+  height: 88px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(239, 246, 255, 0.95) 0%, rgba(147, 197, 253, 0.55) 8%, transparent 22%),
+    radial-gradient(circle, rgba(59, 130, 246, 0.38) 0%, rgba(37, 99, 235, 0.16) 42%, rgba(37, 99, 235, 0.05) 62%, transparent 78%);
+  animation: authorityAmbient 2.6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.tower-authority-glow::after {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.22) 0%, transparent 68%);
+  animation: authorityAmbient 2.6s ease-in-out infinite reverse;
+}
+
+.edge-tower-authority .tower-svg {
+  position: relative;
+  z-index: 1;
+}
+
+.edge-tower-authority .tower-beacon-halo {
+  fill: rgba(96, 165, 250, 0.45);
+  animation: authorityHalo 2.6s ease-in-out infinite;
+}
+
+.edge-tower-authority .tower-beacon {
+  fill: rgba(147, 197, 253, 0.55);
+  animation: authorityHalo 2.6s ease-in-out infinite;
+}
+
+.edge-tower-authority .tower-beacon-core {
+  fill: #eff6ff;
+  filter: drop-shadow(0 0 4px rgba(147, 197, 253, 0.95)) drop-shadow(0 0 10px rgba(59, 130, 246, 0.65));
+  animation: authorityCore 2.6s ease-in-out infinite;
+}
+
+@keyframes authorityCore {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes authorityHalo {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes authorityAmbient {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translateX(-50%) scale(0.94);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateX(-50%) scale(1.06);
+  }
+}
+
+/* Geographic authority illumination on the map canvas */
+.leaflet-overlay-pane path.authority-map-glow {
+  animation: authorityMapGlow 2.8s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+}
+
+@keyframes authorityMapGlow {
+  0%,
+  100% {
+    fill-opacity: 0.1;
+  }
+  50% {
+    fill-opacity: 0.2;
+  }
+}
+
+/* ── Simulation vehicle (primary map focus) ── */
+.sim-vehicle-marker-wrap {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.prevail-map-live .map-label-pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  opacity: 0.88;
+}
+
+.sim-vehicle-shell {
+  width: 144px;
+  height: 144px;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 12px 18px rgba(37, 99, 235, 0.28));
+  pointer-events: none;
+}
+
+.sim-vehicle-rotator {
+  position: relative;
+  width: 144px;
+  height: 144px;
+  display: grid;
+  place-items: center;
+  transform-origin: 50% 50%;
+  transition: transform 0.12s linear;
+  will-change: transform;
+}
+
+.sim-vehicle-road-shadow {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 72%;
+  height: 18%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: radial-gradient(ellipse, rgba(11, 18, 32, 0.28) 0%, transparent 72%);
+  filter: blur(2px);
+  z-index: 0;
+}
+
+.sim-vehicle-body {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 10px 18px rgba(11, 18, 32, 0.32));
+}
+
+.sim-vehicle-body .sim-vehicle-svg {
+  display: block;
+}
+
+.sim-vehicle-trail {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 14px;
+  height: 36px;
+  transform: translate(-50%, 0);
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.sim-vehicle-rotator.sim-vehicle-moving.vehicle-effect-exhaust .sim-vehicle-trail {
+  opacity: 0.5;
+  background: linear-gradient(to bottom, transparent, rgba(148, 163, 184, 0.5));
+  filter: blur(3px);
+  animation: vehicleExhaust 0.85s ease-out infinite;
+}
+
+.sim-vehicle-rotator.sim-vehicle-moving.vehicle-effect-motion .sim-vehicle-trail {
+  opacity: 0.42;
+  width: 18px;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.35));
+  animation: vehicleMotion 0.5s ease-out infinite;
+}
+
+.sim-vehicle-rotator.sim-vehicle-moving.vehicle-effect-light-trail .sim-vehicle-trail {
+  opacity: 0.65;
+  width: 16px;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--vehicle-accent) 70%, transparent));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--vehicle-glow) 40%, transparent);
+  animation: vehicleLightTrail 0.7s ease-out infinite;
+}
+
+.sim-vehicle-rotator.sim-vehicle-moving .sim-vehicle-body {
+  animation: vehicleMicroBob 0.35s ease-in-out infinite alternate;
+}
+
+.vehicle-selector-panel {
+  touch-action: pan-y;
+}
+
+@keyframes vehicleMicroBob {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -1px;
+  }
+}
+
+@keyframes vehicleExhaust {
+  0% {
+    transform: translate(-50%, 0) scaleY(0.6);
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(-50%, 28px) scaleY(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes vehicleMotion {
+  0% {
+    transform: translate(-50%, 0) scaleY(0.45);
+    opacity: 0.18;
+  }
+  100% {
+    transform: translate(-50%, 32px) scaleY(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes vehicleLightTrail {
+  0% {
+    transform: translate(-50%, 0) scaleY(0.5);
+    opacity: 0.22;
+  }
+  100% {
+    transform: translate(-50%, 34px) scaleY(1.12);
+    opacity: 0;
+  }
+}
+
+.traffic-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 99px;
+  background: #94a3b8;
+  opacity: 0.32;
+}
+
+.edge-tower-authority .map-label-edge {
+  color: #1e40af;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.edge-tower-shadow .map-label-edge {
+  color: #475569;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.22);
 }
 
 @layer components {

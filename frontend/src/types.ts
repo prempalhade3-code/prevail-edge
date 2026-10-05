@@ -23,6 +23,8 @@ export interface PredictionResult {
   probabilities: Record<string, number>;
   eta_sec?: number;
   computed_at_ms: number;
+  for_edge?: string;
+  route_terminal?: boolean;
 }
 
 export interface ShadowState {
@@ -97,6 +99,8 @@ export interface DriveStatus {
   city_path?: string[];
   wait_for_warm?: boolean;
   warm_ready?: boolean;
+  warm_state?: "waiting" | "ready" | "timeout" | "failed" | null;
+  warm_shadow_target?: string | null;
 }
 
 export interface HealthStatus {
