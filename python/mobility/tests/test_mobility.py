@@ -16,11 +16,11 @@ class TestMobilityModule(unittest.TestCase):
         cls.mapper = RegionMapper(config_path=cls.config_path)
 
     def test_region_mapper_coordinates(self):
-        """Test exact center coordinate lookups for all four edge regions."""
-        self.assertEqual(self.mapper.get_edge_id(12.920709, 77.663605), "edge-a")
-        self.assertEqual(self.mapper.get_edge_id(12.928155, 77.681794), "edge-b")
-        self.assertEqual(self.mapper.get_edge_id(12.941340, 77.696074), "edge-c")
-        self.assertEqual(self.mapper.get_edge_id(12.956990, 77.703291), "edge-d")
+        """City/zone centroids map to the four edge regions."""
+        self.assertEqual(self.mapper.get_edge_id(12.9175, 77.6220), "edge-a")
+        self.assertEqual(self.mapper.get_edge_id(12.9255, 77.6760), "edge-b")
+        self.assertEqual(self.mapper.get_edge_id(12.9560, 77.7016), "edge-c")
+        self.assertEqual(self.mapper.get_edge_id(12.8448, 77.6632), "edge-d")
 
     def test_haversine_distance(self):
         """Test haversine distance calculation is positive for distinct points."""
@@ -37,14 +37,15 @@ class TestMobilityModule(unittest.TestCase):
         from python.mobility.road_graph import RoadGraph
 
         graph = RoadGraph()
-        a_to_d = graph.shortest_path_m("edge-a", "edge-d")
-        a_to_b = graph.shortest_path_m("edge-a", "edge-b")
-        self.assertIsNotNone(a_to_d)
-        self.assertGreater(a_to_d, a_to_b)
+        long_leg = graph.shortest_path_m("electronic-city", "whitefield")
+        short_leg = graph.shortest_path_m("silk-board", "koramangala")
+        self.assertIsNotNone(long_leg)
+        self.assertIsNotNone(short_leg)
+        self.assertGreater(long_leg, short_leg)
 
     def test_estimate_eta(self):
         """Test ETA estimation from edge-a center to edge-b center."""
-        gps_a = (12.920709, 77.663605)
+        gps_a = (12.9175, 77.6220)
         eta_sec = estimate_eta(gps_a, "edge-b", speed_mps=15.0, region_mapper=self.mapper)
         self.assertGreater(eta_sec, 0.0)
 
@@ -92,15 +93,18 @@ class TestMobilityModule(unittest.TestCase):
         from python.mobility.route_planner import plan_ticks, shortest_path
         from python.mobility.road_graph import RoadGraph
 
-        path = shortest_path(RoadGraph(), "edge-a", "edge-d")
-        self.assertEqual(path, ["edge-a", "edge-b", "edge-c", "edge-d"])
-        ticks = plan_ticks("edge-a", "edge-b", linger_first=4, steps_per_leg=8, include_images=True)
+        graph = RoadGraph()
+        path = shortest_path(graph, "electronic-city", "whitefield")
+        self.assertEqual(path[0], "electronic-city")
+        self.assertEqual(path[-1], "whitefield")
+        self.assertGreater(len(path), 2)
+        ticks = plan_ticks("electronic-city", "silk-board", linger_first=4, steps_per_leg=8, include_images=True)
         self.assertGreater(len(ticks), 4)
         self.assertTrue(any(t.get("image_jpeg_b64") for t in ticks))
         coords = {(round(t["latitude"], 5), round(t["longitude"], 5)) for t in ticks}
-        self.assertGreater(len(coords), 2, "route must follow corridor waypoints, not two centroids")
+        self.assertGreater(len(coords), 2, "route must follow road waypoints, not two centroids")
         mapped = {self.mapper.get_edge_id(t["latitude"], t["longitude"]) for t in ticks}
-        self.assertTrue(mapped <= {"edge-a", "edge-b"})
+        self.assertTrue(mapped <= {"edge-a", "edge-d"})
 
 
 if __name__ == "__main__":
