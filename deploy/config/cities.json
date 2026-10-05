@@ -1,0 +1,53 @@
+{
+  "cities": [
+    {
+      "id": "electronic-city",
+      "name": "Electronic City",
+      "latitude": 12.8448,
+      "longitude": 77.6632,
+      "edge_id": "edge-d"
+    },
+    {
+      "id": "silk-board",
+      "name": "Silk Board",
+      "latitude": 12.9175,
+      "longitude": 77.622,
+      "edge_id": "edge-a"
+    },
+    {
+      "id": "koramangala",
+      "name": "Koramangala",
+      "latitude": 12.9344,
+      "longitude": 77.6265,
+      "edge_id": "edge-a"
+    },
+    {
+      "id": "hsr-layout",
+      "name": "HSR Layout",
+      "latitude": 12.9116,
+      "longitude": 77.6389,
+      "edge_id": "edge-a"
+    },
+    {
+      "id": "bellandur",
+      "name": "Bellandur",
+      "latitude": 12.9255,
+      "longitude": 77.676,
+      "edge_id": "edge-b"
+    },
+    {
+      "id": "marathahalli",
+      "name": "Marathahalli",
+      "latitude": 12.956,
+      "longitude": 77.7016,
+      "edge_id": "edge-c"
+    },
+    {
+      "id": "whitefield",
+      "name": "Whitefield",
+      "latitude": 12.9698,
+      "longitude": 77.7499,
+      "edge_id": "edge-c"
+    }
+  ]
+}
