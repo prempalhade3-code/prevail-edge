@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "PrevailPose.h"
 #include "PrevailTrafficActor.generated.h"
 
 UCLASS()
@@ -11,9 +12,18 @@ class PREVAILVIEWER_API APrevailTrafficActor : public AActor
 
 public:
 	APrevailTrafficActor();
+	virtual void Tick(float DeltaSeconds) override;
+
+	void SetTarget(const FVector& Location, float YawDeg, double SpeedMps);
+	void SetPaint(const FLinearColor& Color);
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> Body;
 
-	void ApplyPose(const FVector& Location, float YawDeg);
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UStaticMeshComponent> Cabin;
+
+private:
+	FPrevailPoseTracker Tracker;
+	bool bPainted = false;
 };
